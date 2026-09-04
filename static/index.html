@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Video Content Tool — Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14171A;
+    --panel: #1B1F23;
+    --panel-2: #20252A;
+    --border: #2B3138;
+    --text: #EDEAE3;
+    --muted: #8B9198;
+    --accent: #E8A33D;
+    --accent-dim: #6b551f;
+    --ok: #4CAF6D;
+    --err: #E2554F;
+    --mono-accent: #7EC9C0;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(232,163,61,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    min-height:100vh;
+  }
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:18px 28px;
+    border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  }
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:10px;height:10px;border-radius:50%;
+    background:var(--accent-dim);
+    box-shadow:0 0 0 3px rgba(232,163,61,0.08);
+  }
+  .brand-mark.live{
+    background:var(--accent);
+    animation:pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(232,163,61,0.5);}
+    50%{box-shadow:0 0 0 8px rgba(232,163,61,0);}
+  }
+  .brand h1{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:17px;font-weight:600;letter-spacing:0.01em;margin:0;
+  }
+  .brand small{display:block;color:var(--muted);font-size:11.5px;margin-top:1px;font-family:'JetBrains Mono',monospace;}
+  .status-chip{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    padding:6px 12px;border-radius:20px;border:1px solid var(--border);
+    color:var(--muted);background:var(--panel);
+    display:flex;align-items:center;gap:8px;
+  }
+  .status-chip .rec-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);}
+  .status-chip.running .rec-dot{background:var(--accent);animation:pulse 1.1s ease-in-out infinite;}
+  .status-chip.running{color:var(--accent);border-color:var(--accent-dim);}
+  .status-chip.done{color:var(--ok);border-color:#2c4a37;}
+  .status-chip.error{color:var(--err);border-color:#4a2c2c;}
+
+  .layout{
+    display:grid;grid-template-columns:420px 1fr;gap:0;
+    min-height:calc(100vh - 61px);
+  }
+  @media (max-width:920px){ .layout{grid-template-columns:1fr;} }
+
+  .panel-left{
+    border-right:1px solid var(--border);
+    padding:26px 26px 40px;
+    overflow-y:auto;
+  }
+  .panel-right{
+    display:flex;flex-direction:column;
+    padding:26px 26px 26px;
+    gap:18px;
+  }
+
+  .step{
+    border:1px solid var(--border);
+    background:var(--panel);
+    border-radius:10px;
+    padding:18px;
+    margin-bottom:16px;
+  }
+  .step-head{display:flex;align-items:baseline;gap:8px;margin-bottom:12px;}
+  .step-num{
+    font-family:'JetBrains Mono',monospace;color:var(--muted);font-size:12px;
+  }
+  .step-title{font-family:'Space Grotesk',sans-serif;font-size:14.5px;font-weight:600;}
+
+  label{
+    display:block;font-size:12.5px;color:var(--muted);margin:12px 0 6px;
+    font-family:'JetBrains Mono',monospace;
+  }
+  label:first-of-type{margin-top:0;}
+  textarea, input[type=text], input[type=url]{
+    width:100%;background:var(--bg);color:var(--text);
+    border:1px solid var(--border);border-radius:7px;
+    padding:10px 12px;font-family:'Inter',sans-serif;font-size:13.5px;
+    resize:vertical;
+  }
+  textarea:focus, input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent);}
+  textarea{min-height:110px;line-height:1.5;}
+
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .toggle-row .toggle-label{font-size:13.5px;color:var(--text);font-family:'Inter',sans-serif;}
+  .toggle-row .toggle-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .switch{position:relative;width:42px;height:24px;flex:none;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{
+    position:absolute;inset:0;background:var(--bg);border:1px solid var(--border);
+    border-radius:24px;cursor:pointer;transition:.15s;
+  }
+  .slider::before{
+    content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;
+    background:var(--muted);border-radius:50%;transition:.15s;
+  }
+  input:checked + .slider{background:var(--accent-dim);border-color:var(--accent);}
+  input:checked + .slider::before{transform:translateX(18px);background:var(--accent);}
+
+  .radio-group{display:flex;flex-direction:column;gap:8px;}
+  .radio-card{
+    display:flex;align-items:flex-start;gap:10px;
+    border:1px solid var(--border);border-radius:8px;padding:10px 12px;
+    cursor:pointer;background:var(--bg);
+  }
+  .radio-card.checked{border-color:var(--accent);background:rgba(232,163,61,0.06);}
+  .radio-card input{margin-top:3px;accent-color:var(--accent);}
+  .radio-card .rc-title{font-size:13px;font-weight:500;}
+  .radio-card .rc-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
+  .hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.5;}
+
+  .run-btn{
+    width:100%;margin-top:6px;
+    background:var(--accent);color:#1A1400;
+    border:none;border-radius:8px;padding:13px;
+    font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;
+    cursor:pointer;letter-spacing:0.01em;
+    transition:transform .1s, filter .15s;
+  }
+  .run-btn:hover{filter:brightness(1.08);}
+  .run-btn:active{transform:scale(0.98);}
+  .run-btn:disabled{background:var(--panel-2);color:var(--muted);cursor:not-allowed;}
+
+  .console-wrap{
+    flex:1;display:flex;flex-direction:column;
+    border:1px solid var(--border);border-radius:10px;
+    background:#0F1215;overflow:hidden;min-height:320px;
+  }
+  .console-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px;border-bottom:1px solid var(--border);
+    background:var(--panel);
+  }
+  .console-head span{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted);}
+  .console-dots{display:flex;gap:6px;}
+  .console-dots i{width:8px;height:8px;border-radius:50%;background:var(--border);display:block;}
+  .console-body{
+    flex:1;overflow-y:auto;padding:14px 16px;
+    font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.65;
+    color:#C9D0D6;
+  }
+  .console-body .line{white-space:pre-wrap;word-break:break-word;}
+  .console-body .line.err{color:var(--err);}
+  .console-body .line.ok{color:var(--ok);}
+  .console-empty{color:var(--muted);}
+
+  .output-panel{
+    border:1px solid var(--border);border-radius:10px;background:var(--panel);
+    padding:18px;display:none;
+  }
+  .output-panel.show{display:block;}
+  .output-panel h3{
+    font-family:'Space Grotesk',sans-serif;font-size:14.5px;margin:0 0 12px;
+    display:flex;align-items:center;gap:8px;
+  }
+  video{width:100%;border-radius:8px;background:#000;display:block;}
+  .dl-row{display:flex;gap:10px;margin-top:12px;}
+  .dl-btn{
+    font-family:'JetBrains Mono',monospace;font-size:12px;
+    background:var(--bg);border:1px solid var(--border);color:var(--text);
+    padding:8px 14px;border-radius:6px;text-decoration:none;
+  }
+  .dl-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .warn-list{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:12px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark" id="brandMark"></div>
+    <div>
+      <h1>AI Video Content Tool</h1>
+      <small>Agnes AI &middot; local console</small>
+    </div>
+  </div>
+  <div class="status-chip" id="statusChip"><span class="rec-dot"></span><span id="statusText">Sẵn sàng</span></div>
+</div>
+
+<div class="layout">
+  <div class="panel-left">
+    <form id="jobForm">
+
+      <div class="step">
+        <div class="step-head"><span class="step-num">01</span><span class="step-title">Kịch bản</span></div>
+        <label for="script">Nội dung kịch bản</label>
+        <textarea id="script" name="script_text" placeholder="Dán kịch bản vào đây... mỗi ý một đoạn, AI sẽ tự chia scene." required></textarea>
+
+        <label for="style">Style hình ảnh</label>
+        <input type="text" id="style" name="style" value="cinematic, warm lighting, photographic" />
+
+        <label for="subject">Chủ thể chính</label>
+        <input type="text" id="subject" name="subject" placeholder="VD: cô gái tóc dài áo dài trắng" />
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="step-num">02</span><span class="step-title">Nhân vật xuyên suốt</span></div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Giữ nhân vật nhất quán</div>
+            <div class="toggle-sub">Chạy character-lock trước khi tạo scene</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="keepCharacter" name="keep_character" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="referenceField" style="display:none;">
+          <label for="reference">URL ảnh mẫu (public)</label>
+          <input type="url" id="reference" name="reference_image_url" placeholder="https://...jpg" />
+          <div class="hint">Bắt buộc khi bật giữ nhân vật nhất quán — ảnh cần là URL public hoặc data URI.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="step-num">03</span><span class="step-title">Chế độ quota</span></div>
+        <div class="radio-group" id="quotaGroup">
+          <label class="radio-card checked">
+            <input type="radio" name="quota_mode" value="tiet_kiem" checked />
+            <div>
+              <div class="rc-title">Tiết kiệm</div>
+              <div class="rc-sub">Ít request nhất — dùng keyframe_array, 1 lần gọi video cho cả chuỗi scene</div>
+            </div>
+          </label>
+          <label class="radio-card">
+            <input type="radio" name="quota_mode" value="binh_thuong" />
+            <div>
+              <div class="rc-title">Bình thường</div>
+              <div class="rc-sub">Kiểm soát kỹ từng scene — dùng frame_to_frame_chain, tuần tự từng đoạn</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-head"><span class="step-num">04</span><span class="step-title">Chạy</span></div>
+        <div class="hint">Server Agnes đang free nên hệ thống tự giãn cách request (~3-5 phút/lần generate) để không quá tải — quá trình có thể mất một lúc, cứ để chạy nền.</div>
+        <button type="submit" class="run-btn" id="runBtn">Bắt đầu tạo video</button>
+      </div>
+
+    </form>
+  </div>
+
+  <div class="panel-right">
+    <div class="console-wrap">
+      <div class="console-head">
+        <span id="consoleLabel">console — chưa có job nào</span>
+        <div class="console-dots"><i></i><i></i><i></i></div>
+      </div>
+      <div class="console-body" id="consoleBody">
+        <div class="console-empty">Điền form bên trái rồi bấm "Bắt đầu tạo video" — log tiến trình sẽ hiện ở đây theo thời gian thực.</div>
+      </div>
+    </div>
+
+    <div class="output-panel" id="outputPanel">
+      <h3>Video hoàn tất</h3>
+      <video id="resultVideo" controls></video>
+      <div class="dl-row">
+        <a class="dl-btn" id="downloadLink" href="#" download>Tải video</a>
+      </div>
+      <ul class="warn-list" id="warnList"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+const form = document.getElementById('jobForm');
+const runBtn = document.getElementById('runBtn');
+const keepCharacter = document.getElementById('keepCharacter');
+const referenceField = document.getElementById('referenceField');
+const consoleBody = document.getElementById('consoleBody');
+const consoleLabel = document.getElementById('consoleLabel');
+const statusChip = document.getElementById('statusChip');
+const statusText = document.getElementById('statusText');
+const brandMark = document.getElementById('brandMark');
+const outputPanel = document.getElementById('outputPanel');
+const resultVideo = document.getElementById('resultVideo');
+const downloadLink = document.getElementById('downloadLink');
+const warnList = document.getElementById('warnList');
+
+keepCharacter.addEventListener('change', () => {
+  referenceField.style.display = keepCharacter.checked ? 'block' : 'none';
+  document.getElementById('reference').required = keepCharacter.checked;
+});
+
+document.querySelectorAll('#quotaGroup input[type=radio]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.querySelectorAll('.radio-card').forEach(c => c.classList.remove('checked'));
+    r.closest('.radio-card').classList.add('checked');
+  });
+});
+
+function setStatus(mode, text){
+  statusChip.className = 'status-chip ' + mode;
+  statusText.textContent = text;
+  brandMark.className = 'brand-mark' + (mode === 'running' ? ' live' : '');
+}
+
+function appendLine(text, cls){
+  if (consoleBody.querySelector('.console-empty')) consoleBody.innerHTML = '';
+  const div = document.createElement('div');
+  div.className = 'line' + (cls ? ' ' + cls : '');
+  div.textContent = text;
+  consoleBody.appendChild(div);
+  consoleBody.scrollTop = consoleBody.scrollHeight;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  runBtn.disabled = true;
+  runBtn.textContent = 'Đang chạy...';
+  consoleBody.innerHTML = '';
+  outputPanel.classList.remove('show');
+  setStatus('running', 'Đang khởi tạo job...');
+
+  const fd = new FormData(form);
+  let res;
+  try {
+    res = await fetch('/api/jobs', { method: 'POST', body: fd });
+  } catch (err) {
+    appendLine('Không kết nối được server: ' + err, 'err');
+    setStatus('error', 'Lỗi kết nối');
+    runBtn.disabled = false;
+    runBtn.textContent = 'Bat dau tao video';
+    return;
+  }
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    appendLine('Lỗi tạo job: ' + (data.error || res.status), 'err');
+    setStatus('error', 'Lỗi');
+    runBtn.disabled = false;
+    runBtn.textContent = 'Bat dau tao video';
+    return;
+  }
+  const jobData = await res.json();
+  const jobId = jobData.job_id;
+  consoleLabel.textContent = 'console — job ' + jobId;
+  setStatus('running', 'Đang chạy job ' + jobId);
+
+  const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const ws = new WebSocket(wsProto + '://' + location.host + '/ws/jobs/' + jobId);
+
+  ws.onmessage = (evt) => {
+    const msg = JSON.parse(evt.data);
+    if (msg.type === 'log') {
+      appendLine(msg.line);
+    } else if (msg.type === 'error') {
+      appendLine(msg.message, 'err');
+    } else if (msg.type === 'done') {
+      runBtn.disabled = false;
+      runBtn.textContent = 'Bat dau tao video';
+      if (msg.status === 'completed') {
+        setStatus('done', 'Hoàn tất');
+        appendLine('✓ Hoàn tất video: ' + msg.video_url, 'ok');
+        resultVideo.src = msg.video_url;
+        downloadLink.href = msg.video_url;
+        outputPanel.classList.add('show');
+        warnList.innerHTML = '';
+        (msg.warnings || []).forEach(w => {
+          const li = document.createElement('li');
+          li.textContent = w;
+          warnList.appendChild(li);
+        });
+      } else {
+        setStatus('error', 'Thất bại');
+        appendLine('✗ Job thất bại: ' + (msg.error || 'không rõ lỗi'), 'err');
+      }
+    }
+  };
+  ws.onerror = () => appendLine('Mất kết nối WebSocket log — job vẫn có thể đang chạy nền.', 'err');
+});
+</script>
+</body>
+</html>
