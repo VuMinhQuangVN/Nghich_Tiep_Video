@@ -781,3 +781,94 @@ Phase 9 chốt PASS.
 Phase 10 chốt PASS sau khi full test suite chạy xanh.
 
 Tiếp theo: 🚀 **Phase 11 — Video Post-processing**.
+
+====================================================
+
+# PHASE 11 — VIDEO POST-PROCESSING — DONE ✅
+
+- Thêm `utils/video_post_processor.py` làm boundary FFmpeg sau generation.
+- Hỗ trợ optional voiceover, background music, SRT subtitles, text overlays và CTA.
+- Không sinh voice/music bằng AI; Phase 11 chỉ nhận media có sẵn.
+- Khi không có post-processing options, video được copy nguyên trạng, không re-encode.
+- `server/job_manager.py` chạy post-processing sau `PipelineRunner` và trả file cuối `final_video_postprocessed.mp4`.
+- Không thay đổi Router, Technique hay generation logic.
+
+Phase 11 chốt PASS sau khi full test suite chạy xanh.
+
+# Tiếp theo: 🚀 **Phase 12 — Platform Optimization**.
+
+Đã triển khai
+core/
+├── platform_optimizer.py ← NEW
+├── creative_director.py ← MODIFIED
+└── scene_planner.py ← MODIFIED
+
+tests/
+└── test_platform_optimizer.py ← NEW
+
+Hỗ trợ đúng 4 platform roadmap yêu cầu:
+
+TikTok
+Instagram Reels
+YouTube Shorts
+Facebook
+
+PlatformOptimizer là contract dùng chung cho CreativeDirector + ScenePlanner, nên platform không chỉ được đưa vào prompt một cách hình thức mà các planner đều nhận cùng một bộ quy tắc.
+
+Riêng TikTok giữ đúng cấu trúc ví dụ trong roadmap:
+
+0–3s → Strong hook
+3–20s → Product demonstration
+20–27s → Benefit
+27–30s → CTA
+
+Mình cũng không đụng:
+
+Router
+Technique
+Agnes
+PipelineRunner
+Post-processing
+
+Đúng nguyên tắc “chỉ sửa Phase hiện tại”.
+
+Test
+80 passed → trước Phase 12
+86 passed → sau Phase 12
+
+Kết quả cuối:
+
+86 passed in 0.20s
+
+compileall cũng PASS.
+
+ZIP — chỉ Phase 12
+
+Cấu trúc:
+
+Phase_12_Platform_Optimization/
+├── PHASE_12_README.md
+├── Nghich_Tiep_Video_AI_Product_Video_Roadmap.md
+├── Qua_Trinh_Nang_Cap.md
+│
+├── core/
+│ ├── platform_optimizer.py
+│ ├── creative_director.py
+│ └── scene_planner.py
+│
+└── tests/
+└── test_platform_optimizer.py
+
+Tải Phase 12 — Platform Optimization
+
+Bạn copy nội dung Phase_12_Platform_Optimization/ vào root ai_video_tool rồi chạy:
+
+python -m pytest
+
+Kỳ vọng:
+
+86 passed
+
+🟢 Phase 12 chốt PASS.
+
+Như vậy chuỗi Phase 1 → Phase 12 đã đi hết theo roadmap; hiện tại không nên tự ý nhảy sang feature mới nếu chưa xác định Phase tiếp theo trong roadmap.

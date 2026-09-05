@@ -31,6 +31,7 @@ from orchestrator.creative_pipeline_adapter import CreativePipelineAdapter
 from engines.agnes_client import AgnesClient
 from orchestrator.pipeline_runner import PipelineInput, PipelineRunner
 from utils.key_rotation import KeyRotator
+from utils.video_post_processor import VideoPostProcessor
 
 current_job_id: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_job_id", default=None)
 
@@ -212,7 +213,10 @@ async def _run_creative_job(
             log.info("Phase 10 — CreativePlan → PipelineInput → PipelineRunner")
             result = await PipelineRunner(engine).run(pipeline_input)
 
-        job.result_video_path = str(result.final_video_path)
+        postprocessed_path = job_output_dir / "final_video_postprocessed.mp4"
+        log.info("Phase 11 — bắt đầu video post-processing")
+        final_video = await VideoPostProcessor().process(result.final_video_path, postprocessed_path)
+        job.result_video_path = str(final_video)
         job.warnings = result.warnings
         job.status = JobStatus.COMPLETED
     except Exception as e:  # noqa: BLE001
@@ -262,7 +266,10 @@ async def _run_job(
             )
             result = await runner.run(pipeline_input)
 
-        job.result_video_path = str(result.final_video_path)
+        postprocessed_path = job_output_dir / "final_video_postprocessed.mp4"
+        log.info("Phase 11 — bắt đầu video post-processing")
+        final_video = await VideoPostProcessor().process(result.final_video_path, postprocessed_path)
+        job.result_video_path = str(final_video)
         job.warnings = result.warnings
         job.status = JobStatus.COMPLETED
     except Exception as e:  # noqa: BLE001
