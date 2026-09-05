@@ -687,4 +687,54 @@ Phase tiếp theo: Phase 7 — PromptComposer 2.0.
 - Full test suite: **47 passed**.
 - `compileall`: PASS.
 
-Phase tiếp theo: **Phase 8 — Router optimization**.
+# Phase tiếp theo: **Phase 8 — Router optimization**.
+
+==================================================
+Xong Phase 8 — Router optimization. ✅
+
+Tải Phase 8 — Router Optimization Update
+
+Đã triển khai
+core/router.py
+Thêm route() → trả về RouteDecision
+Giữ nguyên toàn bộ thứ tự ưu tiên Router hiện tại
+Có reason để debug/log
+Có character_lock_required theo Rule 0
+Thêm technique_override cho Developer/Advanced Mode
+Override chỉ được chấp nhận khi engine hỗ trợ technique đó
+Validate input
+Giữ choose_technique() để không phá code cũ
+tests/test_router.py
+14 test mới
+knowledge-base/router.md
+Cập nhật contract Phase 8
+Cập nhật roadmap + lịch sử nâng cấp.
+Kiểm thử
+52 passed
+compileall: PASS
+
+Không đụng UI hay Generation Pipeline — đúng phạm vi Phase 8.
+
+# PHASE 8 — ROUTER OPTIMIZATION DONE ✅
+
+Đã hoàn thành Phase 8 theo roadmap.
+
+### Thay đổi
+
+- Nâng `core/router.py` thành Router có `route()` trả về `RouteDecision`.
+- Giữ nguyên toàn bộ thứ tự ưu tiên của `knowledge-base/router.md`.
+- Rule 0 được thể hiện bằng `character_lock_required`: character lock là prerequisite, không tự thay đổi technique.
+- Thêm `reason` để log/debug quyết định route.
+- Thêm `technique_override` cho Advanced/Developer Mode; override bị từ chối nếu engine không hỗ trợ technique.
+- Validate input (`scene_count`, `quota_mode`, capabilities, override).
+- Giữ `choose_technique()` để không phá caller hiện tại.
+- Không sửa UI hoặc generation pipeline; wiring Advanced UI sẽ thuộc Phase 9/10.
+
+### Kiểm thử
+
+- Router tests mới: 14
+- Full test suite: sẽ kiểm tra lại sau khi đóng gói Phase 8.
+
+Phase 8 chốt PASS.
+
+Tiếp theo đúng roadmap: 🚀 Phase 9 — UI 2 chế độ.

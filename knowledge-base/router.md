@@ -100,3 +100,14 @@ rules:
     condition: "scene_count >= 2 AND engine.supports_storyboard_read == false AND engine.supports_keyframe_array == false"
     technique: frame_to_frame_chain
 ```
+
+
+## Phase 8 — Router optimization
+
+Router vẫn giữ decision table cũ, nhưng được chuẩn hóa thành API `route()` trả về `RouteDecision`.
+
+- `character_lock_required` được xác định ở Rule 0 và chỉ là prerequisite metadata, không tự đổi technique.
+- `reason` giúp log/debug biết vì sao technique được chọn.
+- `technique_override` dành cho Advanced/Developer Mode. Override chỉ hợp lệ khi engine thực sự hỗ trợ technique đó.
+- `choose_technique()` vẫn được giữ để tương thích với pipeline hiện tại.
+- Router validate `scene_count`, `quota_mode`, capabilities và override trước khi quyết định.

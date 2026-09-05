@@ -986,3 +986,8 @@ cách quay từng scene thành các shot cụ thể.
 
 Phase tiếp theo: **Phase 7 — PromptComposer 2.0**.
 done
+**Phase 8 — Router optimization đã hoàn thành.**
+
+Kết quả: Router giữ nguyên decision table nhưng được chuẩn hóa thành `route()` + `RouteDecision`, có validation, reason/debug metadata và developer override có kiểm tra capability. API `choose_technique()` vẫn tương thích với pipeline cũ.
+
+**Phase tiếp theo: Phase 9 — UI 2 chế độ.**
