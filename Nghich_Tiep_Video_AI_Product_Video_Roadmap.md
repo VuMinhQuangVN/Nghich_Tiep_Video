@@ -1,4 +1,5 @@
 # Nghich_Tiep_Video — AI Product Video Generator
+
 ## Master Roadmap & Implementation Specification
 
 > Mục tiêu: biến `Nghich_Tiep_Video` từ tool "người dùng tự nghĩ kịch bản → AI tạo video"
@@ -967,3 +968,11 @@ Mục tiêu đầu tiên duy nhất:
 > **Tạo được một cấu trúc `CreativePlan` sạch, ổn định và đủ khả năng chứa toàn bộ kế hoạch video mà các Phase sau sẽ tạo ra.**
 
 Sau khi Phase 1 test ổn → chuyển Phase 2.
+
+**Phase 5 — ScenePlanner 2.0 đã hoàn thành.**
+
+Kết quả: ScenePlanner nhận `CreativePlan + SubjectLock`, gọi LLM đúng một lần
+cho toàn bộ scene plan, trả về `CreativeScene[]` có cấu trúc đầy đủ và kiểm tra
+consistency contract trước khi cho scene đi tiếp.
+
+**Phase tiếp theo: Phase 6 — ShotPlanner.**

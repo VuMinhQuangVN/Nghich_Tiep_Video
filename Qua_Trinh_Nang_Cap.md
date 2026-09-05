@@ -512,3 +512,134 @@ Quan trọng hơn, ScenePlanner 2.0 sẽ không tự nghĩ lại sản phẩm. N
 Tức là:
 
 # CreativeDirector quyết định quảng cáo cái gì → SubjectLock quyết định cái gì không được phép thay đổi → ScenePlanner quyết định kể câu chuyện đó qua các scene như thế nào.
+
+==================================================
+🔥 Phase 5 — ScenePlanner 2.0 đã triển khai xong.
+
+Mình đã làm trực tiếp trên source trong ZIP của bạn, không nhảy sang Phase 6/7/10.
+
+Đã làm
+
+core/scene_planner.py được nâng từ:
+
+script
+↓
+Scene[]
+
+thành:
+
+CreativePlan +
+SubjectLock
+↓
+ScenePlanner 2.0
+↓
+CreativeScene[]
+
+Mỗi CreativeScene giờ có đầy đủ:
+
+index
+objective
+description
+duration_sec
+camera
+camera_motion
+framing
+product_visibility
+product_position
+character_action
+environment
+lighting
+mood
+transition
+voiceover
+text_overlay
+cta
+Quan trọng nhất: SubjectLock thực sự có tác dụng
+
+Planner được ép contract:
+
+CreativeDirector
+↓
+CreativePlan
+↓
+SubjectLock
+│
+├── identity_features
+├── invariants
+└── character_required
+↓
+ScenePlanner 2.0
+
+Ví dụ nếu SubjectLock nói:
+
+logo X
+chai trắng
+nhãn xanh
+không đổi màu chai
+giữ nguyên logo
+
+thì những thông tin này được đưa thẳng vào context của Scene Planner.
+
+Nếu character_required=False mà LLM trả về character_action, planner reject scene thay vì âm thầm cho nó đi tiếp.
+
+Validation cũng đã có
+Scene phải có objective
+Scene phải có description
+Scene phải có product_visibility
+Index phải tuần tự 1 → 2 → 3...
+Duration > 0
+Tổng duration không vượt quá 125% duration yêu cầu
+Character lock giữa CreativePlan và SubjectLock phải đồng nhất
+JSON lỗi → reject
+Không cho scene planner biến thành Shot Planner
+Mình cũng cố tình giữ backward compatibility
+
+Pipeline cũ của bạn hiện vẫn gọi:
+
+ScenePlanner.plan(script_text, style_hint)
+
+nên mình không phá PipelineRunner ở Phase 5.
+
+Luồng mới dùng:
+
+await scene_planner.plan(creative_plan, subject_lock)
+
+hoặc rõ ràng hơn:
+
+await scene_planner.plan_creative(creative_plan, subject_lock)
+
+Việc nối CreativePlan → SubjectLock → ScenePlanner → Pipeline sẽ để đúng Phase 10, như roadmap yêu cầu.
+PHASE 5 — SCENE PLANNER 2.0 DONE ✅
+
+Đã triển khai Phase 5 theo đúng roadmap.
+
+Thay đổi chính:
+
+- `core/scene_planner.py` nâng thành ScenePlanner 2.0.
+- Input mới: `CreativePlan + SubjectLock`.
+- Output: `CreativeScene[]` với objective, description, duration, camera,
+  camera_motion, framing, product visibility/position, character action,
+  environment, lighting, mood, transition, voiceover, text overlay và CTA.
+- Prompt đưa đầy đủ CreativePlan + SubjectLock vào LLM để planner kể câu chuyện
+  nhưng không tự định nghĩa lại product identity/invariants.
+- Character action bị chặn nếu SubjectLock không bật recurring character.
+- Validate scene index, duration, required fields và tổng duration <= 125% duration yêu cầu.
+- Vẫn giữ backward compatibility cho caller cũ qua `ScenePlanner.plan(script_text, style_hint)`
+  để chưa nhảy sang Phase 10 integration.
+- Không sửa Router, Technique, UI, Agnes generation hay Shot Planner.
+
+Test:
+
+- Phase 1: 4
+- Phase 2: 6
+- Phase 3: 5
+- Phase 4: 6
+- Phase 5: 10
+
+---
+
+- Tổng: 31 passed
+
+Phase 5 chốt PASS.
+
+Tiếp theo đúng roadmap: 🚀 Phase 6 — ShotPlanner.
