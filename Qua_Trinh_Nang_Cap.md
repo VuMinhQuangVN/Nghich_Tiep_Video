@@ -368,3 +368,147 @@ tests/
 đã xuất hiện đầy đủ chưa.
 
 # Phase 3 coi như DONE. ✅
+
+==================================================
+Triển luôn ông. Phase 4 – Subject/Product Lock đã làm xong.
+
+Tôi giữ đúng kiến trúc hiện tại của repo: CreativePlan đã có ProductProfile và CharacterProfile , còn CreativeDirector đã quyết định character có cần hay không . Phase 4 lấy hai nguồn đó để tạo consistency contract, chưa đụng generation.
+
+Thêm 3 file
+models/
+└── subject_lock.py
+
+core/
+└── subject_lock.py
+
+tests/
+└── test_subject_lock.py
+
+Luồng mới:
+
+CreativePlan
+│
+├── ProductProfile
+└── CharacterProfile
+↓
+SubjectLockBuilder
+↓
+SubjectLock
+┌───────────────┐
+│ Product Lock │
+│ References │
+│ Identity │
+│ Invariants │
+└───────────────┘ +
+Character Lock
+(nếu cần)
+
+SubjectLock sẽ khóa những thứ như:
+
+reference image của sản phẩm
+màu sắc / hình dáng / logo / đặc điểm nhận diện
+các invariant không được AI tự ý thay đổi
+cùng một physical product xuyên suốt các shot
+Character Lock chỉ bật khi character.required=True
+
+Đặc biệt Phase 4 chưa gọi Agnes và chưa generate ảnh/video. Đây là lớp dữ liệu ràng buộc để Phase 5/6 dùng về sau.
+
+Code
+
+Download Nghich_Tiep_Video_Phase4.zip
+
+Copy các file vào project theo đúng cấu trúc trên.
+
+Sau đó chạy:
+
+python -m pytest
+
+Lần này tổng sẽ là:
+
+4 Phase 1
+6 Phase 2
+5 Phase 3
+6 Phase 4
+──────────
+21 passed
+
+Ông chạy python -m pytest rồi quăng kết quả cho tôi. Nếu 21 passed thì tôi review lại Phase 4 một lượt và chốt Phase 4, sau đó mới tiến sang Phase 5 – ScenePlanner 2.0.
+🔥 Chuẩn rồi bạn — Phase 4 PASS hoàn toàn.
+
+21 passed in 0.15s
+
+Tổng hiện tại:
+
+Phase Thành phần Test
+✅ Phase 1 CreativePlan 4
+✅ Phase 2 ProductAnalyzer 6
+✅ Phase 3 CreativeDirector 5
+✅ Phase 4 Subject/Product Lock 6
+Tổng 21 PASS
+Phase 4 đã đạt mục tiêu
+
+Hiện tại hệ thống đã có luồng tư duy:
+
+Product Reference
+↓
+ProductAnalyzer
+↓
+ProductProfile
+↓
+CreativeDirector
+↓
+CreativePlan
+↓
+SubjectLock
+↓
+[Chuẩn nhận diện sản phẩm]
+[Invariants]
+[Character Lock nếu cần]
+
+Đặc biệt, SubjectLock chưa nhảy vào generation pipeline vội. Đây là cách tôi muốn giữ kiến trúc: Phase 4 tạo ra consistency contract, các Phase sau mới sử dụng nó để lập scene/shot và compose prompt.
+
+👉 Phase 4 chốt PASS.
+
+Tiếp theo đúng roadmap là:
+
+🚀 Phase 5 — ScenePlanner 2.0
+
+Phase này sẽ nâng scene_planner.py hiện tại từ kiểu:
+
+Script
+↓
+Scene 1
+Scene 2
+Scene 3
+
+thành kiểu:
+
+CreativePlan
+
+- SubjectLock
+  ↓
+  ScenePlanner 2.0
+  ↓
+  Scene 1
+  ├─ objective
+  ├─ duration
+  ├─ product_presence
+  ├─ character_presence
+  ├─ action
+  ├─ visual_description
+  └─ transition
+
+Scene 2
+├─ objective
+├─ duration
+├─ product_presence
+├─ character_presence
+├─ action
+├─ visual_description
+└─ transition
+
+Quan trọng hơn, ScenePlanner 2.0 sẽ không tự nghĩ lại sản phẩm. Nó phải tuân theo SubjectLock.
+
+Tức là:
+
+# CreativeDirector quyết định quảng cáo cái gì → SubjectLock quyết định cái gì không được phép thay đổi → ScenePlanner quyết định kể câu chuyện đó qua các scene như thế nào.
