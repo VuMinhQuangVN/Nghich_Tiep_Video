@@ -191,7 +191,7 @@
 
         <div class="step">
           <div class="step-head"><span class="step-num">04</span><span class="step-title">Tạo video</span></div>
-          <div class="advanced-note">Phase 9 đã hoàn thiện UI Simple Mode. Việc biến 4 trường trên thành CreativePlan và đưa vào generation pipeline thuộc Phase 10.</div>
+          <div class="advanced-note">Phase 10: 4 trường trên chạy qua Product Analyzer → Creative Director → CreativePlan → Generation Pipeline.</div>
           <button type="button" class="run-btn" id="simpleRunBtn">Tạo video bằng AI</button>
         </div>
       </div>
@@ -323,26 +323,71 @@ function appendLine(text, cls){
   consoleBody.scrollTop = consoleBody.scrollHeight;
 }
 
-function showPhase10Notice() {
-  consoleBody.innerHTML = '';
-  appendLine('Simple Mode đã nhận đủ input theo contract Phase 9.', 'ok');
-  appendLine('Ảnh sản phẩm: ' + document.getElementById('simpleProductUrl').value);
-  appendLine('Mục tiêu: ' + document.getElementById('simpleGoal').selectedOptions[0].textContent);
-  appendLine('Platform: ' + document.getElementById('simplePlatform').selectedOptions[0].textContent);
-  appendLine('Duration: ' + document.getElementById('simpleDuration').value + 's');
-  appendLine('→ Generation chưa được gọi ở Phase 9. Phase 10 sẽ nối Simple Mode → CreativePlan → PipelineRunner.');
-  setStatus('', 'Sẵn sàng — chờ Phase 10');
-}
-
-simpleRunBtn.addEventListener('click', () => {
+async function runSimpleCreativeJob() {
   const url = document.getElementById('simpleProductUrl').value.trim();
   if (!url) {
     document.getElementById('simpleProductUrl').focus();
     appendLine('Vui lòng nhập URL ảnh sản phẩm.', 'err');
     return;
   }
-  showPhase10Notice();
-});
+
+  simpleRunBtn.disabled = true;
+  simpleRunBtn.textContent = 'AI đang xây CreativePlan...';
+  consoleBody.innerHTML = '';
+  outputPanel.classList.remove('show');
+  setStatus('running', 'Đang chạy creative pipeline...');
+
+  const fd = new FormData();
+  fd.append('product_reference_url', url);
+  fd.append('goal', document.getElementById('simpleGoal').value);
+  fd.append('platform', document.getElementById('simplePlatform').value);
+  fd.append('duration_sec', document.getElementById('simpleDuration').value);
+  fd.append('language', 'vi');
+  fd.append('quota_mode', 'tiet_kiem');
+
+  try {
+    const res = await fetch('/api/creative-jobs', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.status);
+
+    const jobId = data.job_id;
+    consoleLabel.textContent = 'creative pipeline — job ' + jobId;
+    appendLine('✓ Simple Mode → ProductAnalyzer → CreativeDirector → CreativePlan', 'ok');
+    appendLine('✓ CreativePlan → SubjectLock → PipelineInput → PipelineRunner', 'ok');
+    appendLine('Job: ' + jobId);
+
+    const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(wsProto + '://' + location.host + '/ws/jobs/' + jobId);
+    ws.onmessage = (evt) => {
+      const msg = JSON.parse(evt.data);
+      if (msg.type === 'log') appendLine(msg.line);
+      else if (msg.type === 'done') {
+        simpleRunBtn.disabled = false;
+        simpleRunBtn.textContent = 'Tạo video bằng AI';
+        if (msg.status === 'completed') {
+          setStatus('done', 'Hoàn tất');
+          appendLine('✓ Hoàn tất video: ' + msg.video_url, 'ok');
+          resultVideo.src = msg.video_url;
+          downloadLink.href = msg.video_url;
+          outputPanel.classList.add('show');
+          warnList.innerHTML = '';
+          (msg.warnings || []).forEach(w => { const li=document.createElement('li'); li.textContent=w; warnList.appendChild(li); });
+        } else {
+          setStatus('error', 'Thất bại');
+          appendLine('✗ Job thất bại: ' + (msg.error || 'không rõ lỗi'), 'err');
+        }
+      }
+    };
+    ws.onerror = () => appendLine('Mất kết nối WebSocket log — job vẫn có thể đang chạy nền.', 'err');
+  } catch (err) {
+    appendLine('Lỗi: ' + err.message, 'err');
+    setStatus('error', 'Lỗi');
+    simpleRunBtn.disabled = false;
+    simpleRunBtn.textContent = 'Tạo video bằng AI';
+  }
+}
+
+simpleRunBtn.addEventListener('click', runSimpleCreativeJob);
 
 async function runAdvancedJob() {
   if (!document.getElementById('script').value.trim()) {

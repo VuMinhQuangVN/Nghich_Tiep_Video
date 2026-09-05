@@ -996,3 +996,6 @@ Kết quả: Router giữ nguyên decision table nhưng được chuẩn hóa th
 Simple Mode và Advanced Mode đã được triển khai trong `static/index.html`. Phase 9 không thay đổi generation pipeline; Simple Mode chỉ thu thập input theo contract và báo rõ boundary sang Phase 10.
 
 **Phase tiếp theo: Phase 10 — Connect existing Pipeline.**
+**Phase 10 — Generation integration: DONE.**
+
+**Phase tiếp theo: Phase 11 — Post-processing.**

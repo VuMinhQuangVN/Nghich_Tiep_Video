@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from server.job_manager import JobStatus, registry, start_job
+from server.job_manager import JobStatus, registry, start_job, start_creative_job
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -30,6 +30,29 @@ app = FastAPI(title="AI Video Content Tool")
 @app.get("/")
 async def index():
     return FileResponse(ROOT_DIR / "static" / "index.html")
+
+
+@app.post("/api/creative-jobs")
+async def create_creative_job(
+    product_reference_url: str = Form(...),
+    goal: str = Form(...),
+    platform: str = Form(...),
+    duration_sec: float = Form(30),
+    language: str = Form("vi"),
+    quota_mode: str = Form("tiet_kiem"),
+):
+    try:
+        job = await start_creative_job(
+            product_reference_url=product_reference_url,
+            goal=goal,
+            platform=platform,
+            duration_sec=duration_sec,
+            language=language,
+            quota_mode_raw=quota_mode,
+        )
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return {"job_id": job.id}
 
 
 @app.post("/api/jobs")

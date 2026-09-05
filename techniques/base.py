@@ -13,12 +13,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from core.scene_planner import Scene
+from models.creative_plan import CreativeScene
 
 
 @dataclass
 class TechniqueContext:
-    scenes: list[Scene]
+    scenes: list[CreativeScene]
     style: str
     subject_name: str
     character_sheet_url: str | None
@@ -26,6 +26,7 @@ class TechniqueContext:
     max_concurrent_image_requests: int
     max_concurrent_video_submit: int
     poll_interval_sec: float
+    product_reference_url: str | None = None
 
 
 @dataclass

@@ -23,6 +23,11 @@ from typing import Any
 
 from config import settings
 from core.router import QuotaMode
+from core.creative_director import CreativeDirector
+from core.product_analyzer import ProductAnalyzer
+from core.subject_lock import SubjectLockBuilder
+from models.creative_plan import CreativeInput
+from orchestrator.creative_pipeline_adapter import CreativePipelineAdapter
 from engines.agnes_client import AgnesClient
 from orchestrator.pipeline_runner import PipelineInput, PipelineRunner
 from utils.key_rotation import KeyRotator
@@ -121,6 +126,102 @@ async def start_job(
 
     asyncio.create_task(_run_job(job, script_text, style, subject, reference_image_url, keep_character, quota_mode_raw))
     return job
+
+
+async def start_creative_job(
+    product_reference_url: str,
+    goal: str,
+    platform: str,
+    duration_sec: float,
+    language: str = "vi",
+    quota_mode_raw: str = "tiet_kiem",
+) -> Job:
+    """Phase 10 entrypoint: Simple Mode input -> creative layer -> generation."""
+    settings.validate()
+    product_reference_url = product_reference_url.strip()
+    if not product_reference_url:
+        raise ValueError("product_reference_url không được rỗng")
+    if not goal.strip():
+        raise ValueError("goal không được rỗng")
+    if not platform.strip():
+        raise ValueError("platform không được rỗng")
+    if duration_sec <= 0:
+        raise ValueError("duration_sec phải > 0")
+
+    job = registry.create()
+    job.status = JobStatus.PENDING
+    asyncio.create_task(_run_creative_job(
+        job, product_reference_url, goal, platform, duration_sec, language, quota_mode_raw
+    ))
+    return job
+
+
+async def _run_creative_job(
+    job: Job,
+    product_reference_url: str,
+    goal: str,
+    platform: str,
+    duration_sec: float,
+    language: str,
+    quota_mode_raw: str,
+) -> None:
+    token = current_job_id.set(job.id)
+    job.status = JobStatus.RUNNING
+    try:
+        quota_mode = QuotaMode.SAVE if quota_mode_raw == "tiet_kiem" else QuotaMode.NORMAL
+        key_rotator = KeyRotator(
+            settings.agnes_api_keys,
+            cooldown_base_sec=settings.cooldown_base_sec,
+            cooldown_max_sec=settings.cooldown_max_sec,
+            cooldown_step_sec=settings.cooldown_step_sec,
+            cooldown_decay_after_success=settings.cooldown_decay_after_success,
+        )
+        job_output_dir = settings.output_dir / job.id
+
+        async with AgnesClient(key_rotator) as engine:
+            creative_input = CreativeInput(
+                product_reference_urls=[product_reference_url],
+                goal=goal.strip(),
+                platform=platform.strip(),
+                duration_sec=float(duration_sec),
+                language=language.strip() or "vi",
+            )
+
+            log.info("Phase 10 — Product Analyzer: đang phân tích sản phẩm...")
+            product = await ProductAnalyzer(engine).analyze(creative_input.product_reference_urls)
+
+            log.info("Phase 10 — Creative Director: đang tạo CreativePlan...")
+            creative_plan = await CreativeDirector(engine).direct(creative_input, product)
+
+            subject_lock = SubjectLockBuilder().build(
+                creative_input.product_reference_urls,
+                creative_plan.product,
+                creative_plan.character,
+            )
+
+            pipeline_input = CreativePipelineAdapter.to_pipeline_input(
+                creative_plan,
+                subject_lock,
+                output_dir=job_output_dir,
+                quota_mode=quota_mode,
+                max_concurrent_image_requests=settings.max_concurrent_image_requests,
+                max_concurrent_video_submit=settings.max_concurrent_video_submit,
+                poll_interval_sec=settings.poll_interval_sec,
+            )
+
+            log.info("Phase 10 — CreativePlan → PipelineInput → PipelineRunner")
+            result = await PipelineRunner(engine).run(pipeline_input)
+
+        job.result_video_path = str(result.final_video_path)
+        job.warnings = result.warnings
+        job.status = JobStatus.COMPLETED
+    except Exception as e:  # noqa: BLE001
+        job.error = str(e)
+        job.status = JobStatus.FAILED
+        job.broadcast(f"[LỖI] {e}")
+    finally:
+        job.done_event.set()
+        current_job_id.reset(token)
 
 
 async def _run_job(

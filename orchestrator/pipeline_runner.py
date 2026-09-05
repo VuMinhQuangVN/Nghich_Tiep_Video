@@ -17,6 +17,8 @@ from pathlib import Path
 
 from core.router import QuotaMode, RouterInput, Technique, choose_technique
 from core.scene_planner import ScenePlanner
+from models.creative_plan import CreativePlan
+from models.subject_lock import SubjectLock
 from engines.base_engine import BaseEngine
 from techniques.base import TechniqueContext, TechniqueResult
 from techniques.character_lock import CharacterLock
@@ -40,6 +42,10 @@ class PipelineInput:
     max_concurrent_video_submit: int
     poll_interval_sec: float
     output_dir: Path
+    # Phase 10 creative hand-off. Optional to preserve legacy callers.
+    product_reference_url: str | None = None
+    creative_plan: CreativePlan | None = None
+    subject_lock: SubjectLock | None = None
 
 
 # Các technique KHÔNG được Agnes hỗ trợ (storyboard_sheet, scene_extend_edit)
@@ -56,8 +62,15 @@ class PipelineRunner:
     async def run(self, inp: PipelineInput) -> TechniqueResult:
         inp.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # ---- Bước 2: Scene Planning (tuần tự) ----
-        scenes = await self._scene_planner.plan(inp.script_text, inp.style_hint)
+        # ---- Bước 2: Scene Planning ----
+        # Phase 10 consumes the approved CreativePlan/SubjectLock. Legacy
+        # callers continue to use the old script_text/style_hint contract.
+        if inp.creative_plan is not None:
+            if inp.subject_lock is None:
+                raise ValueError("CreativePlan input requires SubjectLock")
+            scenes = await self._scene_planner.plan_creative(inp.creative_plan, inp.subject_lock)
+        else:
+            scenes = await self._scene_planner.plan(inp.script_text, inp.style_hint)
         if not scenes:
             raise RuntimeError("Scene planner không trả về scene nào — kiểm tra lại kịch bản input")
 
@@ -103,6 +116,7 @@ class PipelineRunner:
             max_concurrent_image_requests=inp.max_concurrent_image_requests,
             max_concurrent_video_submit=inp.max_concurrent_video_submit,
             poll_interval_sec=inp.poll_interval_sec,
+            product_reference_url=inp.product_reference_url,
         )
         result = await technique.run(ctx)
 

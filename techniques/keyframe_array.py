@@ -22,7 +22,7 @@ class KeyframeArray(BaseTechnique):
         self._engine = engine
 
     async def run(self, ctx: TechniqueContext) -> TechniqueResult:
-        ref = [ctx.character_sheet_url] if ctx.character_sheet_url else None
+        ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
 
         # Bước 1: sinh ảnh keyframe cho MỌI scene CÙNG LÚC, giới hạn concurrency
         async def make_image(scene):

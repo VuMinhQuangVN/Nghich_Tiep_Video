@@ -760,4 +760,24 @@ Phase 8 chốt PASS.
 
 Phase 9 chốt PASS.
 
-Tiếp theo đúng roadmap: 🚀 **Phase 10 — Connect existing Pipeline**.
+# Tiếp theo đúng roadmap: 🚀 **Phase 10 — Connect existing Pipeline**.
+
+====================================================
+
+# PHASE 10 — GENERATION PIPELINE — DONE ✅
+
+Đã nối Creative layer với generation pipeline theo đúng nguyên tắc adapter của roadmap.
+
+### Thay đổi
+
+- Thêm `orchestrator/creative_pipeline_adapter.py` làm điểm chuyển duy nhất từ `CreativePlan` + `SubjectLock` sang `PipelineInput`.
+- `server/app.py` thêm `POST /api/creative-jobs` cho Simple Mode.
+- `server/job_manager.py` thêm flow `ProductAnalyzer → CreativeDirector → SubjectLockBuilder → CreativePipelineAdapter → PipelineRunner`.
+- `PipelineRunner` nhận `CreativePlan + SubjectLock` ở Phase 10 nhưng vẫn giữ đường legacy.
+- `TechniqueContext` nhận `product_reference_url`; các technique dùng product reference khi dựng anchor image để không làm mất product identity.
+- `static/index.html`: Simple Mode thực sự gọi creative job endpoint và nhận kết quả qua WebSocket.
+- Không triển khai post-processing, voiceover, subtitle, music hoặc platform optimization trong Phase 10.
+
+Phase 10 chốt PASS sau khi full test suite chạy xanh.
+
+Tiếp theo: 🚀 **Phase 11 — Video Post-processing**.

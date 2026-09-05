@@ -22,17 +22,13 @@ class SingleShotDirect(BaseTechnique):
 
     async def run(self, ctx: TechniqueContext) -> TechniqueResult:
         scene = ctx.scenes[0]
-        ref = [ctx.character_sheet_url] if ctx.character_sheet_url else None
-
-        if ctx.character_sheet_url:
-            source_image = ctx.character_sheet_url
-        else:
-            img_prompt = scene_image_prompt(scene.description, ctx.style)
-            image = await self._engine.generate_image(prompt=img_prompt, reference_images=ref)
-            source_image = image.url_or_path
+        ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
+        img_prompt = scene_image_prompt(scene.description, ctx.style)
+        image = await self._engine.generate_image(prompt=img_prompt, reference_images=ref or None)
+        source_image = image.url_or_path
 
         video_prompt = single_shot_video_prompt(
-            scene.description, scene.camera_move, ctx.style, scene.duration_sec
+            scene.description, scene.camera_motion, ctx.style, scene.duration_sec
         )
         video_id = await self._engine.submit_video_task(
             prompt=video_prompt,

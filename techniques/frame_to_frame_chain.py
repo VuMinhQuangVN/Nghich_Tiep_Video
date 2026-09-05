@@ -25,19 +25,25 @@ class FrameToFrameChain(BaseTechnique):
     async def run(self, ctx: TechniqueContext) -> TechniqueResult:
         segment_paths: list = []
         warnings: list[str] = []
-        anchor_image = ctx.character_sheet_url  # None nếu không có nhân vật lặp lại
-
-        # Re-anchor mỗi 3 scene để giảm "trôi" style, theo khuyến nghị trong doc.
-        original_anchor = ctx.character_sheet_url
+        # Phase 10: build the first anchor from the product reference and,
+        # when available, the character sheet. Later scenes chain from the
+        # previous last frame as before.
+        anchor_image = None
+        original_anchor = None
 
         for i, scene in enumerate(ctx.scenes, start=1):
             if anchor_image is None:
                 img_prompt = scene_image_prompt(scene.description, ctx.style)
-                image = await self._engine.generate_image(prompt=img_prompt)
+                ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
+                image = await self._engine.generate_image(
+                    prompt=img_prompt, reference_images=ref or None
+                )
                 anchor_image = image.url_or_path
+                if original_anchor is None:
+                    original_anchor = anchor_image
 
             video_prompt = scene_video_prompt(
-                scene.description, scene.camera_move, ctx.style, scene.duration_sec
+                scene.description, scene.camera_motion, ctx.style, scene.duration_sec
             )
             video_id = await self._engine.submit_video_task(
                 prompt=video_prompt,
