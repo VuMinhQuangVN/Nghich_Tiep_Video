@@ -976,3 +976,13 @@ cho toàn bộ scene plan, trả về `CreativeScene[]` có cấu trúc đầy �
 consistency contract trước khi cho scene đi tiếp.
 
 **Phase tiếp theo: Phase 6 — ShotPlanner.**
+
+**Phase 6 — ShotPlanner đã hoàn thành.**
+
+ShotPlanner đã được tách khỏi ScenePlanner và chịu trách nhiệm chi tiết hóa
+cách quay từng scene thành các shot cụ thể.
+
+Đã kiểm thử toàn bộ suite: **41 tests passed**.
+
+Phase tiếp theo: **Phase 7 — PromptComposer 2.0**.
+done

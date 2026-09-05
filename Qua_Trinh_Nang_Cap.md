@@ -642,4 +642,49 @@ Test:
 
 Phase 5 chốt PASS.
 
-Tiếp theo đúng roadmap: 🚀 Phase 6 — ShotPlanner.
+# Tiếp theo đúng roadmap: 🚀 Phase 6 — ShotPlanner.
+
+# PHASE 6 — SHOT PLANNER — DONE
+
+Phase 6 triển khai lớp Shot Planner, tách rõ cấp độ Scene và Shot.
+
+Thay đổi chính:
+
+- Thêm `models/shot_plan.py` với `CreativeShot` data contract.
+- Thêm `core/shot_planner.py`.
+- Shot Planner nhận `CreativeScene + CreativePlan + SubjectLock`.
+- Mỗi scene được lập shot bằng một LLM call; nhiều scene được xử lý tuần tự.
+- Shot gồm:
+  `index, shot_type, framing, camera_angle, camera_motion,
+subject_position, action, environment, lighting, duration_sec,
+generation_prompt`.
+- `generation_prompt` chỉ là draft ở cấp shot; prompt cuối cùng vẫn để Phase 7 xử lý.
+- Có validation cho index, camera fields, character lock, JSON response và duration budget.
+- Không sửa Router, Technique, UI, generation pipeline hoặc Agnes client.
+
+Kiểm thử sau Phase 6:
+
+- Tổng số test: 41
+- Kết quả: 41 passed
+- compileall: PASS
+
+Phase tiếp theo: Phase 7 — PromptComposer 2.0.
+==================================================## PHASE 7 — PROMPT COMPOSER 2.0 — DONE
+
+Đã hoàn thành PromptComposer 2.0 theo roadmap.
+
+### Thay đổi
+
+- Nâng `core/prompt_composer.py` thành `PromptComposer` deterministic, không gọi network/LLM.
+- Prompt cuối cùng được ghép theo các lớp: Global Consistency → Product Consistency → Character Consistency → Shot Description → Camera → Lighting → Motion → Negative Constraints.
+- `SubjectLock.invariants` được đưa trực tiếp vào negative constraints để chống product drift.
+- Character lock được áp dụng theo `CreativePlan.character.required` và `SubjectLock.character_required`.
+- Giữ nguyên các helper prompt cũ để không phá technique hiện tại.
+- Thêm `tests/test_prompt_composer.py`.
+
+### Kiểm thử
+
+- Full test suite: **47 passed**.
+- `compileall`: PASS.
+
+Phase tiếp theo: **Phase 8 — Router optimization**.
