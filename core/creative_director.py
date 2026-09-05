@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from engines.base_engine import BaseEngine
+from core.platform_optimizer import build_platform_guidance, normalize_platform
 from models.creative_plan import (
     AudienceProfile, CharacterProfile, CreativeConcept, CreativeInput,
     CreativePlan, ProductProfile, ScriptPlan, VisualStyle,
@@ -63,12 +64,13 @@ SCHEMA:
 
     def _build_prompt(self, i: CreativeInput, p: ProductProfile) -> str:
         payload = {
-            "input": {"goal": i.goal, "platform": i.platform, "duration_sec": i.duration_sec, "language": i.language},
+            "input": {"goal": i.goal, "platform": normalize_platform(i.platform), "duration_sec": i.duration_sec, "language": i.language},
             "product": {"name": p.name, "category": p.category, "description": p.description,
                         "visual_identity": p.visual_identity, "selling_points": p.selling_points,
                         "consistency_requirements": p.consistency_requirements},
         }
-        return f"{self.DIRECTOR_PROMPT}\n\nDỮ LIỆU ĐẦU VÀO:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        guidance = build_platform_guidance(i.platform)
+        return f"{self.DIRECTOR_PROMPT}\n\n{guidance}\n\nDỮ LIỆU ĐẦU VÀO:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
 
     @staticmethod
     def _parse_response(raw: str) -> dict[str, Any]:
@@ -104,8 +106,15 @@ SCHEMA:
         ch_desc = cls._text(ch.get("description"))
         if required and not ch_desc:
             raise ValueError("Creative Director marked character as required but provided no description")
+        normalized_input = CreativeInput(
+            product_reference_urls=list(i.product_reference_urls),
+            goal=i.goal,
+            platform=normalize_platform(i.platform),
+            duration_sec=i.duration_sec,
+            language=i.language,
+        )
         return CreativePlan(
-            input=i, product=p,
+            input=normalized_input, product=p,
             audience=AudienceProfile(cls._text(a.get("age_range")), cls._text(a.get("gender")),
                                      cls._list(a.get("interests")), cls._list(a.get("pain_points"))),
             concept=CreativeConcept(cls._text(c.get("title")), cls._text(c.get("description")), cls._text(c.get("hook"))),

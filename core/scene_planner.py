@@ -12,6 +12,7 @@ from dataclasses import asdict
 from typing import Any
 
 from engines.base_engine import BaseEngine
+from core.platform_optimizer import build_platform_guidance
 from models.creative_plan import CreativePlan, CreativeScene
 from models.subject_lock import SubjectLock
 from utils.logger import get_logger
@@ -42,6 +43,7 @@ QUY TẮC BẮT BUỘC:
    cấp scene, Shot Planner ở Phase 6 sẽ chi tiết hóa camera/shot.
 6. Phân bổ duration hợp lý và tổng duration không vượt quá 25% duration yêu cầu.
 7. Giữ voiceover/text overlay/CTA bám theo ScriptPlan; không tự thêm claim.
+8. BẮT BUỘC áp dụng PLATFORM OPTIMIZATION để điều chỉnh pacing, text, CTA, shot duration và story structure; không đổi platform đã được duyệt.
 8. Trả về DUY NHẤT JSON array hợp lệ, không markdown, không giải thích.
 
 SCHEMA MỖI SCENE:
@@ -152,7 +154,8 @@ SCHEMA MỖI SCENE:
             },
             "subject_lock": lock.to_dict(),
         }
-        return f"{cls.SYSTEM_PROMPT}\n\nDỮ LIỆU ĐÃ ĐƯỢC DUYỆT:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
+        guidance = build_platform_guidance(plan.input.platform)
+        return f"{cls.SYSTEM_PROMPT}\n\n{guidance}\n\nDỮ LIỆU ĐÃ ĐƯỢC DUYỆT:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
 
     @staticmethod
     def _parse_response(raw: Any) -> list[dict[str, Any]]:
