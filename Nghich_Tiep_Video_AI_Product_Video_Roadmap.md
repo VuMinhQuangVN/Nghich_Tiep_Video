@@ -991,3 +991,8 @@ done
 Kết quả: Router giữ nguyên decision table nhưng được chuẩn hóa thành `route()` + `RouteDecision`, có validation, reason/debug metadata và developer override có kiểm tra capability. API `choose_technique()` vẫn tương thích với pipeline cũ.
 
 **Phase tiếp theo: Phase 9 — UI 2 chế độ.**
+**Phase 9 — UI 2 chế độ đã hoàn thành.**
+
+Simple Mode và Advanced Mode đã được triển khai trong `static/index.html`. Phase 9 không thay đổi generation pipeline; Simple Mode chỉ thu thập input theo contract và báo rõ boundary sang Phase 10.
+
+**Phase tiếp theo: Phase 10 — Connect existing Pipeline.**

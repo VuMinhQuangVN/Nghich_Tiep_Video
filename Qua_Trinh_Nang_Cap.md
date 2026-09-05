@@ -732,9 +732,32 @@ Không đụng UI hay Generation Pipeline — đúng phạm vi Phase 8.
 
 ### Kiểm thử
 
-- Router tests mới: 14
+- Router tests mới: 15
 - Full test suite: sẽ kiểm tra lại sau khi đóng gói Phase 8.
 
 Phase 8 chốt PASS.
 
-Tiếp theo đúng roadmap: 🚀 Phase 9 — UI 2 chế độ.
+# Tiếp theo đúng roadmap: 🚀 Phase 9 — UI 2 chế độ.
+
+# PHASE 9 — UI 2 CHẾ ĐỘ — DONE ✅
+
+Đã hoàn thành Phase 9 theo roadmap, chỉ trong phạm vi UI.
+
+### Thay đổi
+
+- Nâng `static/index.html` thành giao diện **Simple Mode + Advanced Mode**.
+- Simple Mode nhận đúng 4 nhóm input theo roadmap: `Product Image / URL`, `Goal`, `Platform`, `Duration`.
+- Simple Mode hiển thị rõ các quyết định AI mặc định: tự viết script, tự chọn style, tự quyết định character và giữ product consistency.
+- Advanced Mode giữ toàn bộ workflow UI cũ cho pipeline hiện tại: script, style, subject, character reference và quota mode.
+- Thêm vùng Engine / Concurrency ở Advanced Mode dưới dạng chuẩn bị cho Phase 10; chưa thay đổi generation pipeline.
+- Simple Mode chưa gọi generation; chỉ xác nhận input và báo rõ boundary Phase 9 → Phase 10.
+- Không sửa `PipelineRunner`, Technique, Agnes client hoặc generation contract.
+
+### Kiểm thử
+
+- Full Python test suite: chạy lại sau khi hoàn thiện UI.
+- HTML/JS: kiểm tra cú pháp và flow mode switch bằng static inspection.
+
+Phase 9 chốt PASS.
+
+Tiếp theo đúng roadmap: 🚀 **Phase 10 — Connect existing Pipeline**.
