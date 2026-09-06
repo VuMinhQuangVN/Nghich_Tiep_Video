@@ -17,6 +17,9 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+
+
+log = logging.getLogger(__name__)
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -130,18 +133,24 @@ async def start_job(
 
 
 async def start_creative_job(
-    product_reference_url: str,
     goal: str,
     platform: str,
     duration_sec: float,
+    product_reference_url: str | None = None,
     language: str = "vi",
     quota_mode_raw: str = "tiet_kiem",
+    voiceover_path: str | None = None,
+    background_music_path: str | None = None,
+    subtitles_path: str | None = None,
+    product_reference_urls: list[str] | None = None,
 ) -> Job:
     """Phase 10 entrypoint: Simple Mode input -> creative layer -> generation."""
     settings.validate()
-    product_reference_url = product_reference_url.strip()
-    if not product_reference_url:
-        raise ValueError("product_reference_url không được rỗng")
+    references = [x.strip() for x in (product_reference_urls or []) if isinstance(x, str) and x.strip()]
+    if not references and product_reference_url:
+        references = [product_reference_url.strip()] if product_reference_url.strip() else []
+    if not references:
+        raise ValueError("Cần ít nhất một product image reference")
     if not goal.strip():
         raise ValueError("goal không được rỗng")
     if not platform.strip():
@@ -152,19 +161,23 @@ async def start_creative_job(
     job = registry.create()
     job.status = JobStatus.PENDING
     asyncio.create_task(_run_creative_job(
-        job, product_reference_url, goal, platform, duration_sec, language, quota_mode_raw
+        job, references, goal, platform, duration_sec, language, quota_mode_raw,
+        voiceover_path, background_music_path, subtitles_path,
     ))
     return job
 
 
 async def _run_creative_job(
     job: Job,
-    product_reference_url: str,
+    product_reference_urls: list[str],
     goal: str,
     platform: str,
     duration_sec: float,
     language: str,
     quota_mode_raw: str,
+    voiceover_path: str | None = None,
+    background_music_path: str | None = None,
+    subtitles_path: str | None = None,
 ) -> None:
     token = current_job_id.set(job.id)
     job.status = JobStatus.RUNNING
@@ -181,7 +194,7 @@ async def _run_creative_job(
 
         async with AgnesClient(key_rotator) as engine:
             creative_input = CreativeInput(
-                product_reference_urls=[product_reference_url],
+                product_reference_urls=list(product_reference_urls),
                 goal=goal.strip(),
                 platform=platform.strip(),
                 duration_sec=float(duration_sec),
@@ -214,8 +227,19 @@ async def _run_creative_job(
             result = await PipelineRunner(engine).run(pipeline_input)
 
         postprocessed_path = job_output_dir / "final_video_postprocessed.mp4"
-        log.info("Phase 11 — bắt đầu video post-processing")
-        final_video = await VideoPostProcessor().process(result.final_video_path, postprocessed_path)
+        post_options = CreativePipelineAdapter.to_post_process_options(
+            creative_plan,
+            voiceover_path=Path(voiceover_path) if voiceover_path else None,
+            background_music_path=Path(background_music_path) if background_music_path else None,
+            subtitles_path=Path(subtitles_path) if subtitles_path else None,
+        )
+        log.info(
+            "Phase 11 — bắt đầu video post-processing (work=%s)",
+            VideoPostProcessor.has_work(post_options),
+        )
+        final_video = await VideoPostProcessor().process(
+            result.final_video_path, postprocessed_path, post_options
+        )
         job.result_video_path = str(final_video)
         job.warnings = result.warnings
         job.status = JobStatus.COMPLETED

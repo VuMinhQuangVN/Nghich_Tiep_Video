@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.prompt_composer import scene_image_prompt, single_shot_video_prompt
+
 from engines.base_engine import BaseEngine, VideoStatus
 from orchestrator.polling_worker import poll_until_done
 from techniques.base import BaseTechnique, TechniqueContext, TechniqueResult
@@ -22,13 +22,15 @@ class SingleShotDirect(BaseTechnique):
 
     async def run(self, ctx: TechniqueContext) -> TechniqueResult:
         scene = ctx.scenes[0]
-        ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
-        img_prompt = scene_image_prompt(scene.description, ctx.style)
+        ref = BaseTechnique.product_reference_images(ctx)
+        img_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
         image = await self._engine.generate_image(prompt=img_prompt, reference_images=ref or None)
         source_image = image.url_or_path
 
-        video_prompt = single_shot_video_prompt(
-            scene.description, scene.camera_motion, ctx.style, scene.duration_sec
+        video_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
+        video_prompt += (
+            f"\n\nCamera motion: {scene.camera_motion}. "
+            f"Style: {ctx.style}. Duration: {scene.duration_sec:g}s."
         )
         video_id = await self._engine.submit_video_task(
             prompt=video_prompt,

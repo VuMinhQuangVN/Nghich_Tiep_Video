@@ -102,3 +102,16 @@ def test_phase9_advanced_mode_keeps_current_job_api():
     assert "async function runAdvancedJob()" in html
     assert "fetch('/api/jobs', { method: 'POST', body: fd })" in html
     assert "form.addEventListener('submit'" in html
+
+
+def test_phase10_simple_mode_supports_local_product_upload():
+    html = _html()
+    assert 'id="simpleProductFile"' in html
+    assert 'accept="image/jpeg,image/png,image/webp"' in html
+    assert "fd.append('product_images', file)" in html
+
+
+def test_phase10_simple_mode_product_input_accepts_upload_or_url():
+    html = _html()
+    assert "if (!url && files.length === 0)" in html
+    assert "Upload và URL có thể dùng đồng thời" in html

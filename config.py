@@ -21,10 +21,21 @@ def _split_keys(raw: str | None) -> list[str]:
     return [k.strip() for k in raw.split(",") if k.strip()]
 
 
+def _normalize_agnes_base_url(raw: str | None) -> str:
+    """Return Agnes API base URL in canonical ``.../v1`` form."""
+    value = (raw or "https://apihub.agnes-ai.com/v1").strip().rstrip("/")
+    if not value:
+        value = "https://apihub.agnes-ai.com/v1"
+    if not value.endswith("/v1"):
+        value = f"{value}/v1"
+    return value
+
+
 @dataclass(frozen=True)
 class Settings:
     agnes_api_keys: list[str] = field(default_factory=lambda: _split_keys(os.getenv("AGNES_API_KEYS")))
-    agnes_base_url: str = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com")
+    agnes_base_url: str = _normalize_agnes_base_url(os.getenv("AGNES_BASE_URL"))
+    agnes_request_timeout_sec: float = float(os.getenv("AGNES_REQUEST_TIMEOUT_SEC", "120"))
 
     # Server free -> giới hạn thật là TỐC ĐỘ request, không phải quota. Nên mặc định
     # concurrency = 1 (không bắn song song), nghỉ (cooldown) giữa các lần generate.
@@ -48,6 +59,10 @@ class Settings:
             raise RuntimeError(
                 "Chưa có AGNES_API_KEYS trong .env. Copy .env.example thành .env rồi điền key thật."
             )
+        if not self.agnes_base_url.startswith("https://"):
+            raise RuntimeError("AGNES_BASE_URL phải dùng HTTPS.")
+        if self.agnes_request_timeout_sec <= 0:
+            raise RuntimeError("AGNES_REQUEST_TIMEOUT_SEC phải lớn hơn 0.")
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 

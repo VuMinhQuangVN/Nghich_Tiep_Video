@@ -12,12 +12,15 @@ tiếp -> Dependency Inversion.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.router import QuotaMode, RouterInput, Technique, choose_technique
 from core.scene_planner import ScenePlanner
+from core.shot_planner import ShotPlanner
+from core.prompt_composer import PromptComposer
 from models.creative_plan import CreativePlan
+from models.shot_plan import CreativeShot
 from models.subject_lock import SubjectLock
 from engines.base_engine import BaseEngine
 from techniques.base import TechniqueContext, TechniqueResult
@@ -44,6 +47,8 @@ class PipelineInput:
     output_dir: Path
     # Phase 10 creative hand-off. Optional to preserve legacy callers.
     product_reference_url: str | None = None
+    # Phase 13: all product references are forwarded to image generation.
+    product_reference_urls: list[str] = field(default_factory=list)
     creative_plan: CreativePlan | None = None
     subject_lock: SubjectLock | None = None
 
@@ -57,6 +62,8 @@ class PipelineRunner:
     def __init__(self, engine: BaseEngine):
         self._engine = engine
         self._scene_planner = ScenePlanner(engine)
+        self._shot_planner = ShotPlanner(engine)
+        self._prompt_composer = PromptComposer()
         self._character_lock = CharacterLock(engine)
 
     async def run(self, inp: PipelineInput) -> TechniqueResult:
@@ -65,10 +72,45 @@ class PipelineRunner:
         # ---- Bước 2: Scene Planning ----
         # Phase 10 consumes the approved CreativePlan/SubjectLock. Legacy
         # callers continue to use the old script_text/style_hint contract.
+        shot_plans: dict[int, list[CreativeShot]] = {}
+        shot_prompts: dict[int, list[str]] = {}
+
         if inp.creative_plan is not None:
             if inp.subject_lock is None:
                 raise ValueError("CreativePlan input requires SubjectLock")
             scenes = await self._scene_planner.plan_creative(inp.creative_plan, inp.subject_lock)
+
+            # ---- Phase 6: Scene -> Shot planning ----
+            shot_plans = await self._shot_planner.plan(
+                scenes, inp.creative_plan, inp.subject_lock
+            )
+
+            # ---- Phase 7: Shot -> deterministic final engine prompts ----
+            # PromptComposer never calls the network. It assembles the approved
+            # creative context + SubjectLock + scene + shot into the exact
+            # prompt that the selected generation technique will send to Agnes.
+            for scene in scenes:
+                prompts = [
+                    self._prompt_composer.compose_shot_prompt(
+                        inp.creative_plan,
+                        inp.subject_lock,
+                        scene,
+                        shot,
+                    )
+                    for shot in shot_plans.get(scene.index, [])
+                ]
+                if not prompts:
+                    raise RuntimeError(
+                        f"Scene {scene.index} không có shot prompt sau Phase 6/7"
+                    )
+                shot_prompts[scene.index] = prompts
+
+            log.info(
+                "Phase 6/7 hoàn tất: %s scene -> %s shot -> %s final prompt",
+                len(scenes),
+                sum(len(items) for items in shot_plans.values()),
+                sum(len(items) for items in shot_prompts.values()),
+            )
         else:
             scenes = await self._scene_planner.plan(inp.script_text, inp.style_hint)
         if not scenes:
@@ -117,6 +159,11 @@ class PipelineRunner:
             max_concurrent_video_submit=inp.max_concurrent_video_submit,
             poll_interval_sec=inp.poll_interval_sec,
             product_reference_url=inp.product_reference_url,
+            product_reference_urls=list(inp.product_reference_urls),
+            shot_plans=shot_plans,
+            shot_prompts=shot_prompts,
+            creative_plan=inp.creative_plan,
+            subject_lock=inp.subject_lock,
         )
         result = await technique.run(ctx)
 

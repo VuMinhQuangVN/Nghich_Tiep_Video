@@ -35,8 +35,8 @@ class GenerationRequest:
 
     def validate(self) -> None:
         if self.mode == GenerationMode.SIMPLE:
-            if not self.product_reference_url or not _looks_like_url(self.product_reference_url):
-                raise ValueError("Simple Mode requires a valid product_reference_url")
+            if not self.product_reference_url or not _looks_like_reference(self.product_reference_url):
+                raise ValueError("Simple Mode requires a valid product image URL or Data URI")
             if not (self.goal or "").strip():
                 raise ValueError("Simple Mode requires goal")
             if not (self.platform or "").strip():
@@ -57,8 +57,11 @@ class GenerationRequest:
         raise ValueError(f"Unsupported generation mode: {self.mode!r}")
 
 
-def _looks_like_url(value: str) -> bool:
+def _looks_like_reference(value: str) -> bool:
     from urllib.parse import urlparse
 
-    parsed = urlparse(value.strip())
+    value = value.strip()
+    if value.startswith("data:image/"):
+        return ";base64," in value[:128]
+    parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)

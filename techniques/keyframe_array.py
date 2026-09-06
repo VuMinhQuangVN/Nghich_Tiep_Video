@@ -7,7 +7,7 @@ tự nội suy chuyển động mượt giữa các keyframe theo đúng thứ t
 """
 from __future__ import annotations
 
-from core.prompt_composer import keyframe_image_prompt, keyframe_video_prompt
+from core.prompt_composer import keyframe_video_prompt
 from engines.base_engine import BaseEngine, VideoStatus
 from orchestrator.polling_worker import poll_until_done
 from orchestrator.task_queue import run_bounded
@@ -22,11 +22,11 @@ class KeyframeArray(BaseTechnique):
         self._engine = engine
 
     async def run(self, ctx: TechniqueContext) -> TechniqueResult:
-        ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
+        ref = BaseTechnique.product_reference_images(ctx)
 
         # Bước 1: sinh ảnh keyframe cho MỌI scene CÙNG LÚC, giới hạn concurrency
         async def make_image(scene):
-            prompt = keyframe_image_prompt(scene.description, ctx.style)
+            prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
             image = await self._engine.generate_image(prompt=prompt, reference_images=ref)
             return image.url_or_path
 
@@ -49,7 +49,11 @@ class KeyframeArray(BaseTechnique):
 
         # Bước 2: 1 request video duy nhất cho cả chuỗi keyframe
         total_duration = sum(s.duration_sec for s in ctx.scenes)
-        video_prompt = keyframe_video_prompt(ctx.subject_name, mood=ctx.style)
+        shot_sequence = "\n\n".join(
+            BaseTechnique.combined_prompt_for_scene(ctx, scene)
+            for scene in ctx.scenes
+        )
+        video_prompt = keyframe_video_prompt(ctx.subject_name, mood=ctx.style) + "\n\n" + shot_sequence
         video_id = await self._engine.submit_video_task(
             prompt=video_prompt,
             images=keyframe_urls,

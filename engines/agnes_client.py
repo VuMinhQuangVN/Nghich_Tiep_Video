@@ -1,11 +1,12 @@
 """
 engines/agnes_client.py
 -------------------------
-Implement BaseEngine cho Agnes AI, dựa đúng theo knowledge-base/engines/agnes_ai.md:
+Implement BaseEngine cho Agnes AI.
 
-- agnes-2.5-flash          -> /v1/chat/completions   (text + vision)
-- agnes-image-2.1-flash    -> /v1/images/generations (text-to-image / image-to-image)
-- agnes-video-v2.0         -> /v1/videos (submit, async) + GET /agnesapi?video_id=...(poll)
+Base URL chuẩn: https://apihub.agnes-ai.com/v1
+- agnes-2.5-flash          -> /chat/completions   (text + vision)
+- agnes-image-2.1-flash    -> /images/generations (text-to-image / image-to-image)
+- agnes-video-v2.0         -> /videos (submit, async) + GET /agnesapi?video_id=...(poll)
 
 Điểm quan trọng đã theo đúng docs:
 - response_format & mode/image nằm trong extra_body, KHÔNG ở top-level.
@@ -16,9 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 from pathlib import Path
 
 import aiohttp
+import certifi
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -73,16 +76,37 @@ class AgnesClient(BaseEngine):
 
     def __init__(self, key_rotator: KeyRotator, base_url: str | None = None):
         self._keys = key_rotator
-        self._base_url = (base_url or settings.agnes_base_url).rstrip("/")
+        self._base_url = self._normalize_base_url(base_url or settings.agnes_base_url)
+        self._root_url = self._base_url.removesuffix("/v1")
         self._session: aiohttp.ClientSession | None = None
 
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        value = base_url.strip().rstrip("/")
+        if not value:
+            raise ValueError("Agnes base URL không được để trống")
+        if not value.startswith("https://"):
+            raise ValueError("Agnes base URL phải dùng HTTPS")
+        if not value.endswith("/v1"):
+            value = f"{value}/v1"
+        return value
+
+    @staticmethod
+    def _ssl_context() -> ssl.SSLContext:
+        # Windows/Python có thể không dùng đúng CA bundle hệ thống cho aiohttp.
+        # Dùng certifi để HTTPS verification ổn định, tuyệt đối không disable verify.
+        return ssl.create_default_context(cafile=certifi.where())
+
     async def __aenter__(self) -> "AgnesClient":
-        self._session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=settings.agnes_request_timeout_sec)
+        connector = aiohttp.TCPConnector(ssl=self._ssl_context())
+        self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return self
 
     async def __aexit__(self, *exc):
         if self._session:
             await self._session.close()
+            self._session = None
 
     def _session_or_raise(self) -> aiohttp.ClientSession:
         if self._session is None:
@@ -103,9 +127,9 @@ class AgnesClient(BaseEngine):
         wait=wait_exponential(multiplier=1, min=2, max=30),
         reraise=True,
     )
-    async def _post(self, path: str, payload: dict) -> dict:
+    async def _post(self, path: str, payload: dict, *, throttled: bool = True) -> dict:
         session = self._session_or_raise()
-        headers, key = await self._headers(throttled=True)
+        headers, key = await self._headers(throttled=throttled)
         url = f"{self._base_url}{path}"
         async with session.post(url, headers=headers, data=json.dumps(payload)) as resp:
             if resp.status == 429:
@@ -130,10 +154,11 @@ class AgnesClient(BaseEngine):
         wait=wait_exponential(multiplier=1, min=2, max=settings.poll_max_backoff_sec),
         reraise=True,
     )
-    async def _get(self, path: str, params: dict) -> dict:
+    async def _get(self, path: str, params: dict, *, root_path: bool = False) -> dict:
         session = self._session_or_raise()
         headers, key = await self._headers(throttled=False)
-        url = f"{self._base_url}{path}"
+        base = self._root_url if root_path else self._base_url
+        url = f"{base}{path}"
         async with session.get(url, headers=headers, params=params) as resp:
             if resp.status == 429:
                 await self._keys.report_rate_limited(key)
@@ -163,7 +188,7 @@ class AgnesClient(BaseEngine):
                 }
             ],
         }
-        data = await self._post("/v1/chat/completions", payload)
+        data = await self._post("/chat/completions", payload, throttled=False)
         return data["choices"][0]["message"]["content"]
 
     # ------------------------------------------------------------ planning
@@ -181,7 +206,7 @@ class AgnesClient(BaseEngine):
                 {"role": "user", "content": f"Style: {style_hint}\n\nKịch bản:\n{script_text}"},
             ],
         }
-        data = await self._post("/v1/chat/completions", payload)
+        data = await self._post("/chat/completions", payload, throttled=False)
         raw = data["choices"][0]["message"]["content"].strip()
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
@@ -208,7 +233,7 @@ class AgnesClient(BaseEngine):
         }
         if reference_images:
             payload["extra_body"]["image"] = reference_images
-        data = await self._post("/v1/images/generations", payload)
+        data = await self._post("/images/generations", payload, throttled=True)
         url = data["data"][0]["url"]
         return ImageResult(url_or_path=url, is_local_path=False)
 
@@ -239,7 +264,7 @@ class AgnesClient(BaseEngine):
         if extra_body:
             payload["extra_body"] = extra_body
 
-        data = await self._post("/v1/videos", payload)
+        data = await self._post("/videos", payload, throttled=True)
         video_id = data.get("id") or data.get("video_id")
         if not video_id:
             raise AgnesAPIError(f"Không tìm thấy video_id trong response: {data}")
@@ -247,7 +272,7 @@ class AgnesClient(BaseEngine):
         return video_id
 
     async def poll_video_task(self, video_id: str) -> VideoTaskHandle:
-        data = await self._get("/agnesapi", {"video_id": video_id})
+        data = await self._get("/agnesapi", {"video_id": video_id}, root_path=True)
         status_raw = data.get("status", "queued")
         status_map = {
             "queued": VideoStatus.QUEUED,

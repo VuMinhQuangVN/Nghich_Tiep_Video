@@ -15,12 +15,13 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI, Form, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
 from server.job_manager import JobStatus, registry, start_job, start_creative_job
+from utils.image_reference import upload_to_data_uri
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,25 +35,57 @@ async def index():
 
 @app.post("/api/creative-jobs")
 async def create_creative_job(
-    product_reference_url: str = Form(...),
+    product_reference_url: str = Form(""),
+    product_reference_urls: str = Form(""),
+    product_image: UploadFile | None = File(None),
+    product_images: list[UploadFile] | None = File(None),
     goal: str = Form(...),
     platform: str = Form(...),
     duration_sec: float = Form(30),
     language: str = Form("vi"),
     quota_mode: str = Form("tiet_kiem"),
+    voiceover_path: str = Form(""),
+    background_music_path: str = Form(""),
+    subtitles_path: str = Form(""),
 ):
     try:
+        references: list[str] = []
+        raw_urls = product_reference_urls.strip() or product_reference_url.strip()
+        if raw_urls:
+            references.extend(
+                item.strip()
+                for item in raw_urls.replace("\r", "").replace(",", "\n").split("\n")
+                if item.strip()
+            )
+
+        uploads = []
+        if product_image is not None and product_image.filename:
+            uploads.append(product_image)
+        uploads.extend(
+            image for image in (product_images or [])
+            if image is not None and image.filename
+        )
+        for image in uploads:
+            references.append(await upload_to_data_uri(image))
+
+        if not references:
+            raise ValueError("Cần cung cấp ít nhất một URL ảnh sản phẩm hoặc upload ảnh sản phẩm")
+
         job = await start_creative_job(
-            product_reference_url=product_reference_url,
+            product_reference_urls=references,
             goal=goal,
             platform=platform,
             duration_sec=duration_sec,
             language=language,
             quota_mode_raw=quota_mode,
+            voiceover_path=voiceover_path.strip() or None,
+            background_music_path=background_music_path.strip() or None,
+            subtitles_path=subtitles_path.strip() or None,
         )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return {"job_id": job.id}
+
 
 
 @app.post("/api/jobs")

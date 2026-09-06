@@ -108,9 +108,9 @@ class CreativePlan:
         if not self.input.product_reference_urls:
             raise ValueError("CreativePlan requires at least one product reference URL")
 
-        for url in self.input.product_reference_urls:
-            if not _looks_like_url(url):
-                raise ValueError(f"Invalid product reference URL: {url!r}")
+        for reference in self.input.product_reference_urls:
+            if not _looks_like_reference(reference):
+                raise ValueError(f"Invalid product reference: {reference!r}")
 
         if not self.input.goal.strip():
             raise ValueError("CreativePlan.input.goal must not be empty")
@@ -157,9 +157,13 @@ class CreativePlan:
         return asdict(self)
 
 
-def _looks_like_url(value: str) -> bool:
+def _looks_like_reference(value: str) -> bool:
+    value = value.strip()
+    if value.startswith("data:image/"):
+        return ";base64," in value[:128]
+
     try:
-        parsed = urlparse(value.strip())
+        parsed = urlparse(value)
     except ValueError:
         return False
 

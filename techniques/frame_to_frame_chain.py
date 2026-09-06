@@ -8,7 +8,7 @@ nhưng trích frame (ffmpeg) + polling vẫn chạy nền không chặn luồng 
 """
 from __future__ import annotations
 
-from core.prompt_composer import scene_image_prompt, scene_video_prompt
+
 from engines.base_engine import BaseEngine, VideoStatus
 from orchestrator.polling_worker import poll_until_done
 from techniques.base import BaseTechnique, TechniqueContext, TechniqueResult
@@ -33,8 +33,8 @@ class FrameToFrameChain(BaseTechnique):
 
         for i, scene in enumerate(ctx.scenes, start=1):
             if anchor_image is None:
-                img_prompt = scene_image_prompt(scene.description, ctx.style)
-                ref = [url for url in (ctx.product_reference_url, ctx.character_sheet_url) if url]
+                img_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
+                ref = BaseTechnique.product_reference_images(ctx)
                 image = await self._engine.generate_image(
                     prompt=img_prompt, reference_images=ref or None
                 )
@@ -42,8 +42,10 @@ class FrameToFrameChain(BaseTechnique):
                 if original_anchor is None:
                     original_anchor = anchor_image
 
-            video_prompt = scene_video_prompt(
-                scene.description, scene.camera_motion, ctx.style, scene.duration_sec
+            video_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
+            video_prompt += (
+                f"\n\nScene camera motion: {scene.camera_motion}. "
+                f"Style: {ctx.style}. Duration: {scene.duration_sec:g}s."
             )
             video_id = await self._engine.submit_video_task(
                 prompt=video_prompt,

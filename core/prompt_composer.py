@@ -76,6 +76,7 @@ class PromptComposer:
                     f"Shot action: {shot.action}",
                     f"Environment: {shot.environment or scene.environment}",
                     f"Subject position: {shot.subject_position}",
+                    f"Shot draft prompt: {shot.generation_prompt}",
                 ),
                 "CAMERA",
                 self._lines(

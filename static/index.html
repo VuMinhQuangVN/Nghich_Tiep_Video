@@ -148,9 +148,15 @@
       <div class="mode-pane active" id="simplePane">
         <div class="step">
           <div class="step-head"><span class="step-num">01</span><span class="step-title">Sản phẩm</span></div>
-          <label for="simpleProductUrl">Ảnh sản phẩm / URL public</label>
-          <input type="url" id="simpleProductUrl" name="product_reference_url" placeholder="https://.../product.jpg" required />
-          <div class="hint">Ảnh public để AI hiểu sản phẩm. Phase 10 sẽ nối trường này vào Creative Pipeline.</div>
+          <label for="simpleProductFile">Upload ảnh sản phẩm</label>
+          <input type="file" id="simpleProductFile" accept="image/jpeg,image/png,image/webp" multiple />
+          <div class="hint">JPEG, PNG hoặc WebP, tối đa 10 MB mỗi ảnh. Có thể chọn nhiều ảnh.</div>
+          <div class="or-divider"><span>và / hoặc</span></div>
+          <label for="simpleProductUrl">URL ảnh public</label>
+          <textarea id="simpleProductUrl" name="product_reference_urls" rows="3" placeholder="Mỗi URL một dòng hoặc ngăn cách bằng dấu phẩy
+https://.../front.jpg
+https://.../back.jpg"></textarea>
+          <div class="hint">Mỗi reference là một góc nhìn của cùng sản phẩm. Upload và URL có thể dùng đồng thời.</div>
         </div>
 
         <div class="step">
@@ -190,8 +196,19 @@
         </div>
 
         <div class="step">
-          <div class="step-head"><span class="step-num">04</span><span class="step-title">Tạo video</span></div>
-          <div class="advanced-note">Phase 10: 4 trường trên chạy qua Product Analyzer → Creative Director → CreativePlan → Generation Pipeline.</div>
+          <div class="step-head"><span class="step-num">04</span><span class="step-title">Post-processing (tuỳ chọn)</span></div>
+          <label for="simpleVoiceoverPath">Voiceover file</label>
+          <input type="text" id="simpleVoiceoverPath" name="voiceover_path" placeholder="F:\audio\voiceover.wav" />
+          <label for="simpleMusicPath">Nhạc nền</label>
+          <input type="text" id="simpleMusicPath" name="background_music_path" placeholder="F:\audio\music.mp3" />
+          <label for="simpleSubtitlePath">Subtitle SRT</label>
+          <input type="text" id="simpleSubtitlePath" name="subtitles_path" placeholder="F:\subtitle\video.srt" />
+          <div class="hint">Nếu bỏ trống, video giữ nguyên audio/video. Text overlay và CTA sẽ lấy từ CreativePlan và được FFmpeg render khi có nội dung.</div>
+        </div>
+
+        <div class="step">
+          <div class="step-head"><span class="step-num">05</span><span class="step-title">Tạo video</span></div>
+          <div class="advanced-note">Phase 10: Product Analyzer → Creative Director → CreativePlan → Generation Pipeline → Phase 11 Post-processing.</div>
           <button type="button" class="run-btn" id="simpleRunBtn">Tạo video bằng AI</button>
         </div>
       </div>
@@ -325,9 +342,15 @@ function appendLine(text, cls){
 
 async function runSimpleCreativeJob() {
   const url = document.getElementById('simpleProductUrl').value.trim();
-  if (!url) {
-    document.getElementById('simpleProductUrl').focus();
-    appendLine('Vui lòng nhập URL ảnh sản phẩm.', 'err');
+  const fileInput = document.getElementById('simpleProductFile');
+  const files = Array.from(fileInput.files || []);
+  if (!url && files.length === 0) {
+    fileInput.focus();
+    appendLine('Vui lòng upload ảnh sản phẩm hoặc nhập URL ảnh public.', 'err');
+    return;
+  }
+  if (files.some(file => file.size > 10 * 1024 * 1024)) {
+    appendLine('Mỗi ảnh sản phẩm không được vượt quá 10 MB.', 'err');
     return;
   }
 
@@ -338,7 +361,8 @@ async function runSimpleCreativeJob() {
   setStatus('running', 'Đang chạy creative pipeline...');
 
   const fd = new FormData();
-  fd.append('product_reference_url', url);
+  files.forEach(file => fd.append('product_images', file));
+  if (url) fd.append('product_reference_urls', url);
   fd.append('goal', document.getElementById('simpleGoal').value);
   fd.append('platform', document.getElementById('simplePlatform').value);
   fd.append('duration_sec', document.getElementById('simpleDuration').value);
