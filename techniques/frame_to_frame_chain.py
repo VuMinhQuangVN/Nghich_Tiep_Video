@@ -35,8 +35,9 @@ class FrameToFrameChain(BaseTechnique):
             if anchor_image is None:
                 img_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
                 ref = BaseTechnique.product_reference_images(ctx)
+                ratio, resolution = BaseTechnique.image_generation_settings(ctx)
                 image = await self._engine.generate_image(
-                    prompt=img_prompt, reference_images=ref or None
+                    prompt=img_prompt, ratio=ratio, size=resolution, reference_images=ref or None
                 )
                 anchor_image = image.url_or_path
                 if original_anchor is None:

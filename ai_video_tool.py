@@ -46,6 +46,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Protocol, runtime_checkable
 
 import requests
+
+from config import settings
 from flask import Flask, jsonify, request
 
 
@@ -144,7 +146,7 @@ class VideoEnginePort(Protocol):
 #    Đây là nơi DUY NHẤT trong file này "biết" về HTTP/API key/JSON của Agnes.
 # ════════════════════════════════════════════════════════════════════════
 
-AGNES_BASE_URL = "https://apihub.agnes-ai.com"
+AGNES_BASE_URL = settings.agnes_base_url
 
 
 class AgnesHttpClient:
@@ -177,7 +179,7 @@ class AgnesHttpClient:
 class AgnesVisionAnalyzer:
     """Implement VisionAnalyzerPort bằng model agnes-2.5-flash (LLM + vision)."""
 
-    MODEL = "agnes-2.5-flash"
+    MODEL = settings.agnes_models.text
 
     def __init__(self, client: AgnesHttpClient):
         self.client = client
@@ -199,7 +201,7 @@ class AgnesVisionAnalyzer:
             }],
             "temperature": 0.3,
         }
-        data = self.client.post("/v1/chat/completions", payload)
+        data = self.client.post(settings.agnes_endpoints.chat_completions, payload)
         return data["choices"][0]["message"]["content"].strip()
 
     def plan_scenes(self, script_text: str, style_hint: str) -> list[Scene]:
@@ -220,7 +222,7 @@ class AgnesVisionAnalyzer:
             ],
             "temperature": 0.5,
         }
-        data = self.client.post("/v1/chat/completions", payload)
+        data = self.client.post(settings.agnes_endpoints.chat_completions, payload)
         raw = data["choices"][0]["message"]["content"].strip()
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
@@ -241,7 +243,7 @@ class AgnesVisionAnalyzer:
 class AgnesImageEngine:
     """Implement ImageEnginePort bằng model agnes-image-2.1-flash."""
 
-    MODEL = "agnes-image-2.1-flash"
+    MODEL = settings.agnes_models.image
 
     def __init__(self, client: AgnesHttpClient):
         self.client = client
@@ -256,14 +258,14 @@ class AgnesImageEngine:
         }
         if reference_image_url:
             payload["extra_body"]["image"] = [reference_image_url]
-        data = self.client.post("/v1/images/generations", payload)
+        data = self.client.post(settings.agnes_endpoints.image_generations, payload)
         return data["data"][0]["url"]
 
 
 class AgnesVideoEngine:
     """Implement VideoEnginePort bằng model agnes-video-v2.0 (async task API)."""
 
-    MODEL = "agnes-video-v2.0"
+    MODEL = settings.agnes_models.video
 
     def __init__(self, client: AgnesHttpClient):
         self.client = client
@@ -292,7 +294,7 @@ class AgnesVideoEngine:
             "num_frames": self._frames_for_duration(duration_sec),
             "frame_rate": 24,
         }
-        data = self.client.post("/v1/videos", payload)
+        data = self.client.post(settings.agnes_endpoints.video_submit, payload)
         return data["video_id"]
 
     def submit_keyframe_video(self, prompt: str, keyframe_urls: list[str], duration_sec: int) -> str:
@@ -303,7 +305,7 @@ class AgnesVideoEngine:
             "num_frames": self._frames_for_duration(duration_sec),
             "frame_rate": 24,
         }
-        data = self.client.post("/v1/videos", payload)
+        data = self.client.post(settings.agnes_endpoints.video_submit, payload)
         return data["video_id"]
 
     def poll_task(self, task_id: str) -> dict:

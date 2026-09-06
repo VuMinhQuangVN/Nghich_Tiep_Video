@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from models.creative_plan import CreativePlan, CreativeScene
+from models.image_request import image_ratio_for_platform, normalize_image_ratio, normalize_image_resolution
 from models.shot_plan import CreativeShot
 from models.subject_lock import SubjectLock
 
@@ -30,6 +31,8 @@ class TechniqueContext:
     poll_interval_sec: float
     product_reference_url: str | None = None
     product_reference_urls: list[str] = field(default_factory=list)
+    image_ratio: str = "9:16"
+    image_resolution: str = "2K"
     # Phase 6/7 wiring: shot-level plans and deterministic final prompts.
     shot_plans: dict[int, list[CreativeShot]] = field(default_factory=dict)
     shot_prompts: dict[int, list[str]] = field(default_factory=dict)
@@ -45,6 +48,10 @@ class TechniqueResult:
 
 
 class BaseTechnique(ABC):
+    @staticmethod
+    def image_generation_settings(ctx: TechniqueContext) -> tuple[str, str]:
+        return (normalize_image_ratio(ctx.image_ratio), normalize_image_resolution(ctx.image_resolution))
+
     @staticmethod
     def product_reference_images(ctx: TechniqueContext) -> list[str]:
         """Return every product reference, plus an optional character sheet.

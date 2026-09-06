@@ -24,7 +24,8 @@ class SingleShotDirect(BaseTechnique):
         scene = ctx.scenes[0]
         ref = BaseTechnique.product_reference_images(ctx)
         img_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
-        image = await self._engine.generate_image(prompt=img_prompt, reference_images=ref or None)
+        ratio, resolution = BaseTechnique.image_generation_settings(ctx)
+        image = await self._engine.generate_image(prompt=img_prompt, ratio=ratio, size=resolution, reference_images=ref or None)
         source_image = image.url_or_path
 
         video_prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)

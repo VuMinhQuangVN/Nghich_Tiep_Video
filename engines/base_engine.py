@@ -33,6 +33,7 @@ class VideoTaskHandle:
     status: VideoStatus = VideoStatus.QUEUED
     result_url: str | None = None
     error: str | None = None
+    metadata: dict = field(default_factory=dict)
 
 
 @dataclass

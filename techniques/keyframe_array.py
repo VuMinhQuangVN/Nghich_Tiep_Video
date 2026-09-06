@@ -27,7 +27,8 @@ class KeyframeArray(BaseTechnique):
         # Bước 1: sinh ảnh keyframe cho MỌI scene CÙNG LÚC, giới hạn concurrency
         async def make_image(scene):
             prompt = BaseTechnique.combined_prompt_for_scene(ctx, scene)
-            image = await self._engine.generate_image(prompt=prompt, reference_images=ref)
+            ratio, resolution = BaseTechnique.image_generation_settings(ctx)
+            image = await self._engine.generate_image(prompt=prompt, ratio=ratio, size=resolution, reference_images=ref)
             return image.url_or_path
 
         factories = [(lambda s=s: make_image(s)) for s in ctx.scenes]

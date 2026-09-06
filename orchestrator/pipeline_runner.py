@@ -20,6 +20,7 @@ from core.scene_planner import ScenePlanner
 from core.shot_planner import ShotPlanner
 from core.prompt_composer import PromptComposer
 from models.creative_plan import CreativePlan
+from models.image_request import image_ratio_for_platform
 from models.shot_plan import CreativeShot
 from models.subject_lock import SubjectLock
 from engines.base_engine import BaseEngine
@@ -49,6 +50,8 @@ class PipelineInput:
     product_reference_url: str | None = None
     # Phase 13: all product references are forwarded to image generation.
     product_reference_urls: list[str] = field(default_factory=list)
+    image_ratio: str | None = None
+    image_resolution: str = "2K"
     creative_plan: CreativePlan | None = None
     subject_lock: SubjectLock | None = None
 
@@ -149,6 +152,11 @@ class PipelineRunner:
         technique = self._build_technique(technique_name)
 
         # ---- Bước 3 + 4: chạy technique đã chọn ----
+        image_ratio = inp.image_ratio
+        if image_ratio is None and inp.creative_plan is not None:
+            image_ratio = image_ratio_for_platform(inp.creative_plan.input.platform)
+        image_ratio = image_ratio or "9:16"
+
         ctx = TechniqueContext(
             scenes=scenes,
             style=inp.style_hint,
@@ -160,6 +168,8 @@ class PipelineRunner:
             poll_interval_sec=inp.poll_interval_sec,
             product_reference_url=inp.product_reference_url,
             product_reference_urls=list(inp.product_reference_urls),
+            image_ratio=image_ratio,
+            image_resolution=inp.image_resolution,
             shot_plans=shot_plans,
             shot_prompts=shot_prompts,
             creative_plan=inp.creative_plan,

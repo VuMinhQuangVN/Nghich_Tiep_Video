@@ -30,6 +30,7 @@ from tenacity import (
 )
 
 from config import settings
+from models.image_request import ImageGenerationRequest, ImageReference, normalize_image_ratio, normalize_image_resolution
 from engines.base_engine import (
     BaseEngine,
     EngineCapabilities,
@@ -60,25 +61,14 @@ def nearest_valid_num_frames(target: int) -> int:
 
 
 class AgnesClient(BaseEngine):
-    capabilities = EngineCapabilities(
-        supports_storyboard_read=False,
-        supports_keyframe_array=True,
-        supports_edit=False,
-        supports_image_to_video=True,
-        supports_text_to_video=True,
-        max_clip_duration_sec=18,   # 441 frames / 24fps
-        min_clip_duration_sec=1,
-    )
-
-    CHAT_MODEL = "agnes-2.5-flash"
-    IMAGE_MODEL = "agnes-image-2.1-flash"
-    VIDEO_MODEL = "agnes-video-v2.0"
+    """Agnes adapter using centralized model/endpoint/capability config."""
 
     def __init__(self, key_rotator: KeyRotator, base_url: str | None = None):
         self._keys = key_rotator
         self._base_url = self._normalize_base_url(base_url or settings.agnes_base_url)
         self._root_url = self._base_url.removesuffix("/v1")
         self._session: aiohttp.ClientSession | None = None
+        self.capabilities = EngineCapabilities(**vars(settings.agnes_capabilities))
 
     @staticmethod
     def _normalize_base_url(base_url: str) -> str:
@@ -177,7 +167,7 @@ class AgnesClient(BaseEngine):
 
     async def analyze_image(self, image_path_or_url: str, question: str) -> str:
         payload = {
-            "model": self.CHAT_MODEL,
+            "model": settings.agnes_models.text,
             "messages": [
                 {
                     "role": "user",
@@ -188,7 +178,7 @@ class AgnesClient(BaseEngine):
                 }
             ],
         }
-        data = await self._post("/chat/completions", payload, throttled=False)
+        data = await self._post(settings.agnes_endpoints.chat_completions, payload, throttled=False)
         return data["choices"][0]["message"]["content"]
 
     # ------------------------------------------------------------ planning
@@ -200,13 +190,13 @@ class AgnesClient(BaseEngine):
             '[{"index": 1, "description": "...", "duration_sec": 4, "camera_move": "..."}]'
         )
         payload = {
-            "model": self.CHAT_MODEL,
+            "model": settings.agnes_models.text,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Style: {style_hint}\n\nKịch bản:\n{script_text}"},
             ],
         }
-        data = await self._post("/chat/completions", payload, throttled=False)
+        data = await self._post(settings.agnes_endpoints.chat_completions, payload, throttled=False)
         raw = data["choices"][0]["message"]["content"].strip()
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         try:
@@ -217,6 +207,28 @@ class AgnesClient(BaseEngine):
 
     # -------------------------------------------------------------- image
 
+    async def generate_image_request(self, request: ImageGenerationRequest) -> ImageResult:
+        request.validate()
+        payload: dict = {
+            "model": settings.agnes_models.image,
+            "prompt": request.prompt.strip(),
+            "size": normalize_image_resolution(request.resolution),
+            "ratio": normalize_image_ratio(request.ratio),
+            "extra_body": {"response_format": "url"},
+        }
+        references = request.reference_values()
+        if references:
+            payload["extra_body"]["image"] = references
+        data = await self._post(settings.agnes_endpoints.image_generations, payload, throttled=True)
+        item = data["data"][0]
+        url = item.get("url")
+        if url:
+            return ImageResult(url_or_path=url, is_local_path=False)
+        b64 = item.get("b64_json")
+        if b64:
+            return ImageResult(url_or_path=f"data:image/png;base64,{b64}", is_local_path=False)
+        raise AgnesAPIError(f"Image API không trả url/b64_json: {data}")
+
     async def generate_image(
         self,
         prompt: str,
@@ -224,18 +236,13 @@ class AgnesClient(BaseEngine):
         size: str = "2K",
         reference_images: list[str] | None = None,
     ) -> ImageResult:
-        payload: dict = {
-            "model": self.IMAGE_MODEL,
-            "prompt": prompt,
-            "size": size,
-            "ratio": ratio,
-            "extra_body": {"response_format": "url"},
-        }
-        if reference_images:
-            payload["extra_body"]["image"] = reference_images
-        data = await self._post("/images/generations", payload, throttled=True)
-        url = data["data"][0]["url"]
-        return ImageResult(url_or_path=url, is_local_path=False)
+        request = ImageGenerationRequest(
+            prompt=prompt,
+            ratio=ratio,
+            resolution=size,
+            references=[ImageReference(value=value) for value in (reference_images or [])],
+        )
+        return await self.generate_image_request(request)
 
     # -------------------------------------------------------------- video
 
@@ -247,14 +254,25 @@ class AgnesClient(BaseEngine):
         num_frames: int = 121,
         frame_rate: int = 24,
         negative_prompt: str | None = None,
+        *,
+        model: str | None = None,
+        size: str | None = None,
+        seconds: str | None = None,
+        n: int | None = None,
     ) -> str:
         num_frames = nearest_valid_num_frames(num_frames)
         payload: dict = {
-            "model": self.VIDEO_MODEL,
+            "model": model or settings.agnes_models.video,
             "prompt": prompt,
             "num_frames": num_frames,
             "frame_rate": frame_rate,
         }
+        if size is not None:
+            payload["size"] = size
+        if seconds is not None:
+            payload["seconds"] = seconds
+        if n is not None:
+            payload["n"] = n
         extra_body: dict = {}
         if images:
             extra_body["image"] = images
@@ -264,15 +282,18 @@ class AgnesClient(BaseEngine):
         if extra_body:
             payload["extra_body"] = extra_body
 
-        data = await self._post("/videos", payload, throttled=True)
-        video_id = data.get("id") or data.get("video_id")
+        data = await self._post(settings.agnes_endpoints.video_submit, payload, throttled=True)
+        video_id = data.get("video_id") or data.get("id") or data.get("task_id")
         if not video_id:
             raise AgnesAPIError(f"Không tìm thấy video_id trong response: {data}")
-        log.info(f"Đã submit video task {video_id} (mode={mode}, num_frames={num_frames})")
+        log.info(f"Đã submit video task {video_id} (model={payload['model']}, mode={mode})")
         return video_id
 
-    async def poll_video_task(self, video_id: str) -> VideoTaskHandle:
-        data = await self._get("/agnesapi", {"video_id": video_id}, root_path=True)
+    async def poll_video_task(self, video_id: str, *, model_name: str | None = None) -> VideoTaskHandle:
+        params = {"video_id": video_id}
+        if model_name:
+            params["model_name"] = model_name
+        data = await self._get(settings.agnes_endpoints.video_poll, params, root_path=True)
         status_raw = data.get("status", "queued")
         status_map = {
             "queued": VideoStatus.QUEUED,
@@ -285,7 +306,11 @@ class AgnesClient(BaseEngine):
             "error": VideoStatus.FAILED,
         }
         status = status_map.get(status_raw, VideoStatus.IN_PROGRESS)
-        handle = VideoTaskHandle(video_id=video_id, status=status)
+        handle = VideoTaskHandle(
+            video_id=video_id,
+            status=status,
+            metadata=dict(data.get("metadata") or {}),
+        )
         if status == VideoStatus.COMPLETED:
             handle.result_url = (data.get("metadata") or {}).get("url") or data.get("url")
         if status == VideoStatus.FAILED:
