@@ -1,17 +1,12 @@
 """
 engines/base_engine.py
-------------------------
-Interface chung mọi engine tạo ảnh/video phải implement (VD: agnes_client.py
-hiện tại, sau này omni_flash_client.py). Phần còn lại của hệ thống
-(techniques, orchestrator) chỉ phụ thuộc vào interface này, KHÔNG phụ thuộc
-trực tiếp vào AgnesClient -> Dependency Inversion Principle, dễ thêm engine
-mới mà không sửa code cũ (Open/Closed Principle).
+-----------------------
+Interface cơ bản cho mọi generation engine.
 """
 from __future__ import annotations
-
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+from abc import ABC, abstractmethod
 
 
 class VideoStatus(str, Enum):
@@ -19,6 +14,19 @@ class VideoStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+@dataclass
+class EngineCapabilities:
+    # Legacy capability retained only for config compatibility; request-mode
+    # selection is no longer part of the Creative Brain → Pipeline flow.
+    supports_keyframe_array: bool = False
+    supports_storyboard_read: bool = False
+    supports_edit: bool = False
+    supports_image_to_video: bool = True
+    supports_text_to_video: bool = True
+    max_clip_duration_sec: float = 18
+    min_clip_duration_sec: float = 1
 
 
 @dataclass
@@ -36,33 +44,12 @@ class VideoTaskHandle:
     metadata: dict = field(default_factory=dict)
 
 
-@dataclass
-class EngineCapabilities:
-    supports_storyboard_read: bool = False
-    supports_keyframe_array: bool = False
-    supports_edit: bool = False
-    supports_image_to_video: bool = True
-    supports_text_to_video: bool = True
-    max_clip_duration_sec: float = 10
-    min_clip_duration_sec: float = 1
-
-
 class BaseEngine(ABC):
-    """Mọi engine cụ thể phải implement đủ các method dưới đây."""
-
     capabilities: EngineCapabilities
 
-    @abstractmethod
     async def analyze_image(self, image_path_or_url: str, question: str) -> str:
-        """Vision understanding: hỏi LLM về nội dung 1 ảnh, trả về text mô tả."""
         raise NotImplementedError
 
-    @abstractmethod
-    async def plan_scenes(self, script_text: str, style_hint: str = "") -> list[dict]:
-        """Dùng LLM chia kịch bản thành danh sách scene có cấu trúc."""
-        raise NotImplementedError
-
-    @abstractmethod
     async def generate_image(
         self,
         prompt: str,
@@ -72,7 +59,6 @@ class BaseEngine(ABC):
     ) -> ImageResult:
         raise NotImplementedError
 
-    @abstractmethod
     async def submit_video_task(
         self,
         prompt: str,
@@ -81,14 +67,17 @@ class BaseEngine(ABC):
         num_frames: int = 121,
         frame_rate: int = 24,
         negative_prompt: str | None = None,
+        *,
+        model: str | None = None,
+        size: str | None = None,
+        seconds: str | None = None,
+        n: int | None = None,
+        aspect_ratio: str = "9:16",
     ) -> str:
-        """Submit task tạo video (async), trả về video_id."""
         raise NotImplementedError
 
-    @abstractmethod
-    async def poll_video_task(self, video_id: str) -> VideoTaskHandle:
+    async def poll_video_task(self, video_id: str, *, model_name: str | None = None) -> VideoTaskHandle:
         raise NotImplementedError
 
-    @abstractmethod
     async def download_video(self, video_url: str, dest_path: str) -> str:
         raise NotImplementedError

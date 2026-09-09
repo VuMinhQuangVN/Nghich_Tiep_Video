@@ -36,6 +36,15 @@ from utils.logger import get_logger
 log = get_logger(__name__)
 
 
+class NoAvailableKeyError(RuntimeError):
+    """Raised when every configured key is unavailable/bad in this session."""
+
+
+# Compatibility alias: newer tests/callers may use the plural form.
+# Keep one canonical exception type so both names catch the same failure.
+NoAvailableKeysError = NoAvailableKeyError
+
+
 class KeyRotator:
     def __init__(
         self,
@@ -105,18 +114,30 @@ class KeyRotator:
         ]
         return max(0.0, min(waits)) if waits else self._cooldown_base
 
-    async def acquire_key_light(self) -> str:
-        """Dùng cho endpoint NHẸ, cần gọi thường xuyên (VD: poll trạng thái
-        video) — KHÔNG áp cooldown 3-5 phút, chỉ round-robin đơn thuần, tránh
-        làm chậm vòng theo dõi tiến độ. Sinh ảnh/video mới thì dùng
-        acquire_key() (có cooldown) — 2 việc này khác nhau về tải lên server."""
+    async def acquire_key_light(self, exclude_keys: set[str] | None = None) -> str:
+        """Get a key for lightweight/retry traffic without the long generation cooldown.
+
+        ``exclude_keys`` is used by the client retry loop so a transient failure can
+        move to another configured key immediately. Unlike the old implementation,
+        this method NEVER silently clears ``_bad_keys`` and resurrects an invalid key.
+        """
+        excluded = exclude_keys or set()
         async with self._lock:
-            for _ in range(len(self._keys)):
-                key = next(self._cycle)
-                if key not in self._bad_keys:
-                    return key
-            self._bad_keys.clear()
-            return next(self._cycle)
+            candidates = [
+                key for key in self._keys
+                if key not in self._bad_keys and key not in excluded
+            ]
+            if candidates:
+                # Preserve round-robin behaviour while skipping failed/temporary keys.
+                for _ in range(len(self._keys)):
+                    key = next(self._cycle)
+                    if key in candidates:
+                        return key
+                return candidates[0]
+
+            raise NoAvailableKeyError(
+                "Không còn API key khả dụng trong phiên chạy hiện tại."
+            )
 
     # Giữ tương thích ngược với code cũ (không throttle) — không khuyến khích dùng nữa.
     async def next_key(self) -> str:

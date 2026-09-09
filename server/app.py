@@ -5,9 +5,12 @@ FastAPI app cho UI local. Chạy bằng: `python app.py` (ở thư mục gốc p
 
 Route chính:
   GET  /                          -> giao diện web (static/index.html)
-  POST /api/jobs                  -> tạo job mới, chạy pipeline nền, trả job_id
-  WS   /ws/jobs/{job_id}          -> stream log real-time cho 1 job
+  POST /api/creative-plans        -> Creative Brain tạo 5 candidate
+  POST /api/creative-plans/{id}/generate -> render candidate đã chọn
   GET  /api/jobs/{job_id}         -> trạng thái + kết quả hiện tại của job
+  WS   /ws/jobs/{job_id}          -> stream log real-time cho job
+  GET  /logger                    -> logger toàn hệ thống
+  WS   /ws/logger                 -> stream logger toàn hệ thống
   GET  /output/{job_id}/{file}    -> tải/xem video kết quả
 """
 from __future__ import annotations
@@ -20,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import settings
-from server.job_manager import JobStatus, registry, start_job, start_creative_job
+from server.job_manager import JobStatus, registry, start_creative_plan_job, generate_selected_candidate, global_logger_hub
 from utils.image_reference import upload_to_data_uri
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -28,84 +31,68 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 app = FastAPI(title="AI Video Content Tool")
 
 
+def _asyncio_exception_handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """Ignore benign Windows socket-reset noise from clients closing connections."""
+    exc = context.get("exception")
+    if isinstance(exc, ConnectionResetError) and getattr(exc, "winerror", None) == 10054:
+        return
+    loop.default_exception_handler(context)
+
+
+@app.on_event("startup")
+async def configure_asyncio_exception_handler() -> None:
+    asyncio.get_running_loop().set_exception_handler(_asyncio_exception_handler)
+
+
 @app.get("/")
 async def index():
-    return FileResponse(ROOT_DIR / "static" / "index.html")
+    return FileResponse(
+        ROOT_DIR / "static" / "index.html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
-@app.post("/api/creative-jobs")
-async def create_creative_job(
-    product_reference_url: str = Form(""),
-    product_reference_urls: str = Form(""),
-    product_image: UploadFile | None = File(None),
-    product_images: list[UploadFile] | None = File(None),
-    goal: str = Form(...),
-    platform: str = Form(...),
-    duration_sec: float = Form(30),
-    language: str = Form("vi"),
-    quota_mode: str = Form("tiet_kiem"),
-    voiceover_path: str = Form(""),
-    background_music_path: str = Form(""),
-    subtitles_path: str = Form(""),
+@app.post("/api/creative-plans")
+async def create_creative_plans(
+    product_reference_url: str = Form(""), product_reference_urls: str = Form(""),
+    product_image: UploadFile | None = File(None), product_images: list[UploadFile] | None = File(None),
+    style_reference_urls: str = Form(""), style_images: list[UploadFile] | None = File(None),
+    goal: str = Form(...), platform: str = Form(...), duration_sec: float = Form(30), language: str = Form("vi"),
+    voiceover_path: str = Form(""), background_music_path: str = Form(""),
+    subtitles_path: str = Form(""), video_engine: str = Form("auto"), style: str = Form("Auto"), aspect_ratio: str = Form("9:16"),
 ):
     try:
-        references: list[str] = []
+        references = []
         raw_urls = product_reference_urls.strip() or product_reference_url.strip()
         if raw_urls:
-            references.extend(
-                item.strip()
-                for item in raw_urls.replace("\r", "").replace(",", "\n").split("\n")
-                if item.strip()
-            )
-
-        uploads = []
-        if product_image is not None and product_image.filename:
-            uploads.append(product_image)
-        uploads.extend(
-            image for image in (product_images or [])
-            if image is not None and image.filename
-        )
-        for image in uploads:
-            references.append(await upload_to_data_uri(image))
-
-        if not references:
-            raise ValueError("Cần cung cấp ít nhất một URL ảnh sản phẩm hoặc upload ảnh sản phẩm")
-
-        job = await start_creative_job(
-            product_reference_urls=references,
-            goal=goal,
-            platform=platform,
-            duration_sec=duration_sec,
-            language=language,
-            quota_mode_raw=quota_mode,
-            voiceover_path=voiceover_path.strip() or None,
-            background_music_path=background_music_path.strip() or None,
-            subtitles_path=subtitles_path.strip() or None,
-        )
+            references.extend(x.strip() for x in raw_urls.replace("\r", "").replace(",", "\n").split("\n") if x.strip())
+        uploads = [x for x in ([product_image] if product_image is not None else []) if x and x.filename]
+        uploads.extend(x for x in (product_images or []) if x and x.filename)
+        for image in uploads: references.append(await upload_to_data_uri(image))
+        style_refs = []
+        if style_reference_urls.strip():
+            style_refs.extend(x.strip() for x in style_reference_urls.replace("\r", "").replace(",", "\n").split("\n") if x.strip())
+        for image in (style_images or []):
+            if image and image.filename: style_refs.append(await upload_to_data_uri(image))
+        if not references: raise ValueError("Cần ít nhất một URL ảnh sản phẩm hoặc upload ảnh sản phẩm")
+        job = await start_creative_plan_job(
+            product_reference_urls=references, style_reference_urls=style_refs, goal=goal, platform=platform,
+            duration_sec=duration_sec, language=language,
+            voiceover_path=voiceover_path.strip() or None, background_music_path=background_music_path.strip() or None,
+            subtitles_path=subtitles_path.strip() or None, video_engine=video_engine.strip() or "auto",
+            style=style.strip() or "Auto", aspect_ratio=aspect_ratio.strip() or "9:16")
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return {"job_id": job.id}
 
 
-
-@app.post("/api/jobs")
-async def create_job(
-    script_text: str = Form(...),
-    style: str = Form(""),
-    subject: str = Form(""),
-    reference_image_url: str = Form(""),
-    keep_character: bool = Form(False),
-    quota_mode: str = Form("tiet_kiem"),
-):
-    job = await start_job(
-        script_text=script_text,
-        style=style or "cinematic, natural lighting, photographic",
-        subject=subject or "chủ thể chính",
-        reference_image_url=reference_image_url.strip() or None,
-        keep_character=keep_character,
-        quota_mode_raw=quota_mode,
-    )
-    return {"job_id": job.id}
+@app.post("/api/creative-plans/{job_id}/generate")
+async def generate_creative_plan(job_id: str, candidate_index: int = Form(...)):
+    try:
+        job = await generate_selected_candidate(job_id, candidate_index)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    return {"job_id": job.id, "candidate_index": candidate_index}
 
 
 @app.get("/api/jobs/{job_id}")
@@ -122,6 +109,9 @@ async def job_status(job_id: str):
         "status": job.status.value,
         "error": job.error,
         "warnings": job.warnings,
+        "creative_plan": job.creative_plan,
+        "creative_candidates": job.creative_candidates,
+        "selected_candidate": job.selected_candidate,
         "video_url": video_url,
         "log_history": job.log_history,
     }
@@ -180,7 +170,31 @@ async def _send_done(websocket: WebSocket, job) -> None:
         "error": job.error,
         "warnings": job.warnings,
         "video_url": video_url,
+        "phase": getattr(job, "phase", "render"),
     })
+
+
+
+@app.get("/logger")
+async def logger_page():
+    return FileResponse(ROOT_DIR / "static" / "logger.html")
+
+
+@app.websocket("/ws/logger")
+async def logger_ws(websocket: WebSocket):
+    await websocket.accept()
+    hub = global_logger_hub
+    for line in hub.history:
+        await websocket.send_json({"type": "log", "line": line})
+    queue = hub.subscribe()
+    try:
+        while True:
+            line = await queue.get()
+            await websocket.send_json({"type": "log", "line": line})
+    except WebSocketDisconnect:
+        pass
+    finally:
+        hub.unsubscribe(queue)
 
 
 @app.get("/output/{job_id}/{filename}")

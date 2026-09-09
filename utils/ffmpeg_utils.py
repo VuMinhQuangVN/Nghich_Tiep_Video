@@ -100,3 +100,47 @@ async def _concat_with_reencode(video_paths: list[Path], out_path: Path) -> Path
         raise RuntimeError(f"ffmpeg ghép video thất bại: {stderr.decode(errors='ignore')}")
     log.info(f"Đã ghép (re-encode) {len(video_paths)} video -> {out_path}")
     return out_path
+
+
+async def trim_video(
+    video_path: Path,
+    out_path: Path,
+    duration_sec: float,
+) -> Path:
+    """Trim a generated segment to the exact creative-plan duration.
+
+    Video providers may generate 4/6/8/10s clips while the creative script
+    intentionally uses shorter 2-4s editorial beats. This function makes the
+    editorial duration authoritative before concatenation.
+    """
+    if duration_sec <= 0:
+        raise ValueError("duration_sec phải > 0")
+    if not video_path.exists():
+        raise FileNotFoundError(f"Không tìm thấy video cần trim: {video_path}")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    duration = f"{duration_sec:.3f}".rstrip("0").rstrip(".")
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-t", duration,
+        "-map", "0:v:0",
+        "-map", "0:a:0?",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-movflags", "+faststart",
+        str(out_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg trim thất bại ({duration_sec}s): "
+            f"{stderr.decode(errors='ignore')[-3000:]}"
+        )
+    log.info("Đã trim %s -> %.3fs: %s", video_path.name, duration_sec, out_path)
+    return out_path

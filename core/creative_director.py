@@ -1,126 +1,175 @@
+"""
+core/creative_director.py
+--------------------------
+1 lần gọi AI → ra thẳng shot list hoàn chỉnh.
+Học từ Flow app: gộp phân tích sản phẩm + lên kịch bản vào 1 prompt duy nhất.
+Không phase, không oằn tà loàn.
+"""
 from __future__ import annotations
 
 import json
-import re
-from typing import Any
+from utils.logger import get_logger
+from models.creative_plan import CreativeInput, CreativePlan, ShotPlan
 
-from engines.base_engine import BaseEngine
-from core.platform_optimizer import build_platform_guidance, normalize_platform
-from models.creative_plan import (
-    AudienceProfile, CharacterProfile, CreativeConcept, CreativeInput,
-    CreativePlan, ProductProfile, ScriptPlan, VisualStyle,
-)
+log = get_logger(__name__)
 
 
 class CreativeDirector:
-    """Phase 3: turn product understanding + user intent into creative direction."""
+    """Nhận engine AI + input sáng tạo → tạo kịch bản có nhịp dựng rõ ràng."""
 
-    DIRECTOR_PROMPT = """
-Bạn là Creative Director của hệ thống AI tạo video quảng cáo sản phẩm.
-
-Nhiệm vụ: xác định khách hàng mục tiêu; tạo concept và hook; chọn visual style;
-quyết định có cần nhân vật; viết voice-over, text overlay và CTA.
-
-QUY TẮC:
-1. Sản phẩm là chủ thể chính và phải giữ nguyên nhận diện.
-2. Không bịa claim, giá, thành phần, chứng nhận hoặc công dụng chưa được cung cấp.
-3. Chỉ dùng character.required=true khi nhân vật thực sự cần cho concept.
-4. Ý tưởng phải phù hợp goal, platform và duration.
-5. Trả về DUY NHẤT JSON object hợp lệ, không markdown.
-
-SCHEMA:
-{
- "audience":{"age_range":"","gender":"","interests":[],"pain_points":[]},
- "concept":{"title":"","description":"","hook":""},
- "visual_style":{"style":"","lighting":"","color_palette":[],"camera_style":"","mood":""},
- "character":{"required":false,"description":"","reference_url":null},
- "script":{"voiceover":"","text_overlays":[],"cta":""}
-}
-""".strip()
-
-    def __init__(self, engine: BaseEngine):
+    def __init__(self, engine):
+        if engine is None:
+            raise ValueError("CreativeDirector cần một AI engine")
         self._engine = engine
 
-    async def direct(self, creative_input: CreativeInput, product: ProductProfile) -> CreativePlan:
-        self._validate_input(creative_input, product)
-        raw = await self._engine.analyze_image(
-            creative_input.product_reference_urls[0],
-            self._build_prompt(creative_input, product),
+    async def direct(self, creative_input: CreativeInput) -> CreativePlan:
+        """Backward-compatible: brainstorm 5 candidates and return the first one."""
+        candidates = await self.brainstorm(creative_input)
+        return candidates[0]
+
+    async def brainstorm(self, creative_input: CreativeInput) -> list[CreativePlan]:
+        """One AI call -> 5 genuinely different creative directions.
+
+        The AI decides the shot count and pacing. Examples such as 15s/20s/30s are
+        guidance only; no hard-coded shot pattern is imposed here.
+        """
+        log.info("CreativeDirector: đang brainstorm 5 phương án kịch bản...")
+        total_sec = float(creative_input.duration_sec)
+        style = creative_input.style if creative_input.style != "Auto" else ""
+        style_instruction = f"Style phim: {style}." if style else "Tự đề xuất style phù hợp nhất với sản phẩm."
+
+        prompt = f"""Bạn là Creative Director + đạo diễn quảng cáo bán sản phẩm cho TikTok/Reels/Shorts.
+
+Phân tích ảnh sản phẩm và tạo ĐÚNG 5 PHƯƠNG ÁN KỊCH BẢN KHÁC NHAU trong MỘT lần suy luận.
+Mục tiêu là để người dùng xem 5 phương án, chọn phương án hay nhất rồi hệ thống mới sản xuất video.
+
+MỤC TIÊU: {creative_input.goal}
+NỀN TẢNG: {creative_input.platform}
+TỔNG THỜI LƯỢNG BIÊN TẬP CUỐI: chính xác {total_sec:g} giây
+TỈ LỆ: {creative_input.aspect_ratio}
+NGÔN NGỮ VOICEOVER: {creative_input.language}
+{style_instruction}
+
+QUAN TRỌNG VỀ TIMELINE:
+- Hãy TỰ SUY NGHĨ số cảnh và thời lượng từng cảnh sao cho nhịp quảng cáo tốt nhất.
+- Không có công thức cứng cho 15s, 20s hay 30s. Các ví dụ 2-4s/cảnh, 3+3+3+3+3 hoặc 3+3+3+3+4+4 chỉ là THAM KHẢO về nhịp, không phải luật.
+- Với short product ads, thường cảnh ngắn giúp video có nhịp nhanh, nhưng có thể dùng cảnh dài hơn khi một demo/visual cần thời gian.
+- Tổng duration các cảnh PHẢI bằng chính xác {total_sec:g} giây.
+- Duration là thời lượng BIÊN TẬP CUỐI; AI video provider có thể generate clip dài hơn rồi hệ thống trim.
+- Nếu 30s cần 7, 8, 9 hoặc 10 cảnh thì cứ chọn số cảnh hợp lý; đừng ép theo mẫu.
+
+MỖI PHƯƠNG ÁN PHẢI KHÁC VỀ Ý TƯỞNG, KHÔNG CHỈ ĐỔI TỪ NGỮ. Ví dụ có thể cân nhắc:
+- pain-point → solution
+- visual/product-first
+- demo/feature-first
+- before/after hoặc transformation
+- UGC/testimonial/social-proof
+Nhưng hãy tự chọn cấu trúc tốt nhất theo sản phẩm, không bắt buộc dùng các mẫu trên.
+
+MỖI PHƯƠNG ÁN cần có:
+- title
+- direction: ý tưởng kể chuyện ngắn gọn
+- styleSuggestion
+- commonVisualContext bằng tiếng Anh
+- shots: từng cảnh có id, description tiếng Việt, visualPrompt tiếng Anh, voiceover tiếng Việt, duration
+- ratingReason: vì sao phương án này có tiềm năng bán hàng
+- hookStrength: đánh giá Hook
+- conversionAngle: góc chuyển đổi/chốt đơn
+
+Không bịa logo/chức năng/claim y tế hoặc thông số không có trong ảnh/input.
+Voiceover phải ngắn, tự nhiên, nói vừa thời lượng cảnh.
+
+Chỉ trả JSON hợp lệ, không markdown:
+{{
+  "candidates": [
+    {{
+      "title": "...",
+      "direction": "...",
+      "styleSuggestion": "...",
+      "commonVisualContext": "...",
+      "ratingReason": "...",
+      "hookStrength": "strong",
+      "conversionAngle": "...",
+      "shots": [
+        {{"id": 1, "description": "...", "visualPrompt": "...", "voiceover": "...", "duration": 3}}
+      ]
+    }}
+  ]
+}}"""
+        raw = await self._engine.analyze_with_images(
+            images=creative_input.product_reference_urls,
+            prompt=prompt,
         )
-        return self._to_plan(creative_input, product, self._parse_response(raw))
+        data = _parse_json(raw)
+        raw_candidates = data.get("candidates", [])
+        if not isinstance(raw_candidates, list) or len(raw_candidates) < 5:
+            raise ValueError(f"AI phải trả về 5 kịch bản, nhưng nhận được {len(raw_candidates) if isinstance(raw_candidates, list) else 0}")
 
-    @staticmethod
-    def _validate_input(i: CreativeInput, p: ProductProfile) -> None:
-        if not i.product_reference_urls:
-            raise ValueError("CreativeInput requires product reference URLs")
-        if not i.goal.strip():
-            raise ValueError("CreativeInput.goal must not be empty")
-        if not i.platform.strip():
-            raise ValueError("CreativeInput.platform must not be empty")
-        if i.duration_sec <= 0:
-            raise ValueError("CreativeInput.duration_sec must be greater than 0")
-        if not p.name.strip() and not p.description.strip():
-            raise ValueError("ProductProfile must contain product information")
+        plans: list[CreativePlan] = []
+        for candidate in raw_candidates[:5]:
+            plans.append(_candidate_to_plan(candidate, creative_input, total_sec))
+        log.info("CreativeDirector: đã tạo 5 phương án kịch bản; chưa chạy pipeline")
+        return plans
 
-    def _build_prompt(self, i: CreativeInput, p: ProductProfile) -> str:
-        payload = {
-            "input": {"goal": i.goal, "platform": normalize_platform(i.platform), "duration_sec": i.duration_sec, "language": i.language},
-            "product": {"name": p.name, "category": p.category, "description": p.description,
-                        "visual_identity": p.visual_identity, "selling_points": p.selling_points,
-                        "consistency_requirements": p.consistency_requirements},
-        }
-        guidance = build_platform_guidance(i.platform)
-        return f"{self.DIRECTOR_PROMPT}\n\n{guidance}\n\nDỮ LIỆU ĐẦU VÀO:\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
 
-    @staticmethod
-    def _parse_response(raw: str) -> dict[str, Any]:
-        text = (raw or "").strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.I)
-        text = re.sub(r"\s*```$", "", text)
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError:
-            s, e = text.find("{"), text.rfind("}")
-            if s < 0 or e <= s:
-                raise ValueError("Creative Director did not return valid JSON")
-            try:
-                data = json.loads(text[s:e + 1])
-            except json.JSONDecodeError as exc:
-                raise ValueError("Creative Director did not return valid JSON") from exc
-        if not isinstance(data, dict):
-            raise ValueError("Creative Director response must be a JSON object")
-        return data
+def _candidate_to_plan(data: dict, creative_input: CreativeInput, target: float) -> CreativePlan:
+    raw_shots = data.get("shots", []) if isinstance(data, dict) else []
+    if not isinstance(raw_shots, list) or not raw_shots:
+        raise ValueError("Một candidate không có shot list hợp lệ")
+    shots = []
+    for idx, item in enumerate(raw_shots, start=1):
+        if not isinstance(item, dict):
+            continue
+        shots.append(ShotPlan(
+            index=int(item.get("id", idx)),
+            description=str(item.get("description", "")).strip(),
+            visual_prompt=str(item.get("visualPrompt", "")).strip(),
+            voiceover=str(item.get("voiceover", "")).strip(),
+            duration=max(0.1, float(item.get("duration", 3))),
+            common_visual_context=str(data.get("commonVisualContext", "")),
+        ))
+    if not shots:
+        raise ValueError("Candidate không có shot hợp lệ")
+    shots = _normalize_editorial_timeline(shots, target)
+    return CreativePlan(
+        title=str(data.get("title", "Video quảng cáo")),
+        direction=str(data.get("direction", "")),
+        style_suggestion=str(data.get("styleSuggestion", "cinematic")),
+        common_visual_context=str(data.get("commonVisualContext", "")),
+        shots=shots,
+        aspect_ratio=creative_input.aspect_ratio,
+        total_duration=sum(s.duration for s in shots),
+    )
 
-    @staticmethod
-    def _text(v: Any, default: str = "") -> str:
-        return v.strip() if isinstance(v, str) else default
 
-    @staticmethod
-    def _list(v: Any) -> list[str]:
-        return [x.strip() for x in v if isinstance(x, str) and x.strip()] if isinstance(v, list) else []
+def _normalize_editorial_timeline(shots: list[ShotPlan], target: float) -> list[ShotPlan]:
+    """Keep the AI's structure/pacing, only make the final timeline exact."""
+    total = sum(s.duration for s in shots)
+    if total <= 0:
+        raise ValueError("Timeline AI trả về không hợp lệ")
+    factor = target / total
+    for shot in shots:
+        shot.duration = round(shot.duration * factor, 3)
+    drift = round(target - sum(s.duration for s in shots), 3)
+    shots[-1].duration = round(shots[-1].duration + drift, 3)
+    for idx, shot in enumerate(shots, 1):
+        shot.index = idx
+    return shots
 
-    @classmethod
-    def _to_plan(cls, i: CreativeInput, p: ProductProfile, d: dict[str, Any]) -> CreativePlan:
-        a, c, v, ch, s = (d.get(k) or {} for k in ("audience", "concept", "visual_style", "character", "script"))
-        required = bool(ch.get("required", False))
-        ch_desc = cls._text(ch.get("description"))
-        if required and not ch_desc:
-            raise ValueError("Creative Director marked character as required but provided no description")
-        normalized_input = CreativeInput(
-            product_reference_urls=list(i.product_reference_urls),
-            goal=i.goal,
-            platform=normalize_platform(i.platform),
-            duration_sec=i.duration_sec,
-            language=i.language,
-        )
-        return CreativePlan(
-            input=normalized_input, product=p,
-            audience=AudienceProfile(cls._text(a.get("age_range")), cls._text(a.get("gender")),
-                                     cls._list(a.get("interests")), cls._list(a.get("pain_points"))),
-            concept=CreativeConcept(cls._text(c.get("title")), cls._text(c.get("description")), cls._text(c.get("hook"))),
-            visual_style=VisualStyle(cls._text(v.get("style")), cls._text(v.get("lighting")),
-                                     cls._list(v.get("color_palette")), cls._text(v.get("camera_style")), cls._text(v.get("mood"))),
-            character=CharacterProfile(required, ch_desc, ch.get("reference_url") if isinstance(ch.get("reference_url"), str) else None),
-            script=ScriptPlan(cls._text(s.get("voiceover")), cls._list(s.get("text_overlays")), cls._text(s.get("cta"))),
-            scenes=[],
-        )
+
+def _parse_json(raw: str) -> dict:
+    """Parse JSON từ response AI, xử lý cả trường hợp AI bọc trong markdown."""
+    text = raw.strip()
+    # Bỏ markdown code block nếu có
+    for marker in ("```json", "```"):
+        if text.startswith(marker):
+            text = text[len(marker):]
+    text = text.removesuffix("```").strip()
+    # Tìm JSON object
+    start = text.find("{")
+    if start != -1:
+        text = text[start:]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"AI trả về JSON không hợp lệ: {raw[:500]}") from e

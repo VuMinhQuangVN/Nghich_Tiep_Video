@@ -40,6 +40,8 @@ class TextOverlay:
 
 @dataclass(frozen=True)
 class PostProcessOptions:
+    target_ratio: str | None = None
+    target_duration_sec: float | None = None
     voiceover_path: Path | None = None
     background_music_path: Path | None = None
     subtitles_path: Path | None = None
@@ -97,6 +99,14 @@ class VideoPostProcessor:
             )
             audio_map = "[aout]"
 
+        # Normalize the final canvas to the platform ratio. This is deliberately
+        # done after generation because video models may return a different native
+        # canvas even when the image/reference request used the correct ratio.
+        if options.target_ratio:
+            crop_expr = _ratio_crop_expression(options.target_ratio)
+            filter_parts.append(f"[{video_map}]scale=iw:ih,crop={crop_expr}[vaspect]")
+            video_map = "[vaspect]"
+
         # Subtitles are rendered by FFmpeg's subtitles filter. This keeps the
         # SRT file as the source of truth and avoids requiring an external
         # subtitle renderer in Python.
@@ -122,6 +132,10 @@ class VideoPostProcessor:
                 continue
             tag = f"[vtxt{idx}]"
             source = video_map
+            # FFmpeg filter chains require an explicit link separator between
+            # an input stream label (e.g. [0:v]) and the first filter.
+            if source == "0:v":
+                source = "[0:v]"
             enable = f":enable='between(t,{overlay.start_sec},{overlay.end_sec})'" if overlay.end_sec is not None else f":enable='gte(t,{overlay.start_sec})'"
             xy = _overlay_position(overlay.position)
             text = _escape_drawtext(overlay.text)
@@ -134,7 +148,12 @@ class VideoPostProcessor:
         cmd = ["ffmpeg", "-y", *inputs]
         if filter_parts:
             cmd += ["-filter_complex", ";".join(filter_parts)]
-        cmd += ["-map", video_map, "-map", audio_map, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-c:a", "aac", "-movflags", "+faststart", str(output_path)]
+        cmd += ["-map", video_map, "-map", audio_map, "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-c:a", "aac", "-movflags", "+faststart"]
+        if options.target_duration_sec is not None:
+            if options.target_duration_sec <= 0:
+                raise ValueError("target_duration_sec phải > 0")
+            cmd += ["-t", f"{options.target_duration_sec:.3f}".rstrip("0").rstrip(".")]
+        cmd += [str(output_path)]
 
         log.info("Phase 11 — FFmpeg post-processing: %s", " ".join(shlex.quote(x) for x in cmd))
         proc = await asyncio.create_subprocess_exec(
@@ -149,7 +168,9 @@ class VideoPostProcessor:
     @staticmethod
     def has_work(options: PostProcessOptions) -> bool:
         return bool(
-            options.voiceover_path
+            options.target_ratio
+            or options.target_duration_sec is not None
+            or options.voiceover_path
             or options.background_music_path
             or options.subtitles_path
             or any(x.text.strip() for x in options.text_overlays)
@@ -172,6 +193,21 @@ class VideoPostProcessor:
                 raise ValueError("Text overlay start_sec không được âm")
             if overlay.end_sec is not None and overlay.end_sec <= overlay.start_sec:
                 raise ValueError("Text overlay end_sec phải lớn hơn start_sec")
+
+
+
+def _ratio_crop_expression(ratio: str) -> str:
+    """Return an FFmpeg crop expression that preserves the center subject."""
+    mapping = {
+        "9:16": "ih*9/16:ih:(iw-ih*9/16)/2:0",
+        "16:9": "iw:iw*9/16:0:(ih-iw*9/16)/2",
+        "1:1": "min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2",
+        "4:3": "ih*4/3:ih:(iw-ih*4/3)/2:0",
+        "3:4": "iw:iw*4/3:0:(ih-iw*4/3)/2",
+    }
+    if ratio not in mapping:
+        raise ValueError(f"Platform ratio không hỗ trợ post-processing: {ratio}")
+    return mapping[ratio]
 
 
 def _escape_drawtext(text: str) -> str:

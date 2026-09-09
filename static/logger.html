@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Video Tool — Logger</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0d10;--panel:#11151a;--border:#252b33;--text:#d7dde5;--muted:#7d8794;--ok:#3fb950;--err:#f85149}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:13px "JetBrains Mono",Consolas,monospace}
+header{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0}
+.title{font-weight:700}.status{color:var(--muted);font-size:11px}.status.live{color:var(--ok)}
+.actions{display:flex;gap:8px}button{border:1px solid var(--border);background:#161b22;color:var(--muted);border-radius:6px;padding:6px 10px;cursor:pointer}button:hover{color:var(--text)}
+#logs{padding:14px 18px;white-space:pre-wrap;word-break:break-word;line-height:1.65}
+.line{border-bottom:1px solid rgba(255,255,255,.025);padding:2px 0}.error,.critical{color:var(--err)}.warning{color:#d29922}.info{color:var(--text)}
+</style>
+</head>
+<body>
+<header><div><div class="title">AI Video Tool / Global Logger</div><div class="status" id="status">connecting...</div></div>
+<div class="actions"><button onclick="clearLogs()">Clear</button><button onclick="location.href='/'">← App</button></div></header>
+<main id="logs"></main>
+<script>
+const body=document.getElementById('logs'), statusEl=document.getElementById('status');
+function add(line){
+ const el=document.createElement('div'); el.className='line';
+ if(/ ERROR | CRITICAL /.test(line)) el.classList.add('error');
+ else if(/ WARNING /.test(line)) el.classList.add('warning');
+ else el.classList.add('info');
+ el.textContent=line; body.appendChild(el); window.scrollTo(0,document.body.scrollHeight);
+}
+function clearLogs(){body.innerHTML='';}
+function connect(){
+ const proto=location.protocol==='https:'?'wss':'ws';
+ const ws=new WebSocket(`${proto}://${location.host}/ws/logger`);
+ ws.onopen=()=>{statusEl.textContent='● LIVE';statusEl.className='status live'};
+ ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.type==='log')add(m.line)};
+ ws.onclose=()=>{statusEl.textContent='disconnected — retrying';statusEl.className='status';setTimeout(connect,1500)};
+ ws.onerror=()=>ws.close();
+}
+connect();
+</script>
+</body>
+</html>

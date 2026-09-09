@@ -1,0 +1,2 @@
+Xóa file obsolete sau khi giải nén:
+core/router.py

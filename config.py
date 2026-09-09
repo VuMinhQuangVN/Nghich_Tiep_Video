@@ -36,18 +36,9 @@ class AgnesModelConfig:
     """Centralized Agnes model IDs and feature flags."""
 
     text: str = os.getenv("AGNES_TEXT_MODEL", "agnes-2.5-flash")
-    image: str = os.getenv("AGNES_IMAGE_MODEL", "agnes-image-2.1-flash")
-    video: str = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-v2.0")
-    video_experimental: str = os.getenv(
-        "AGNES_VIDEO_EXPERIMENTAL_MODEL", "agnes-video-2.5-flash"
-    )
-    video_trial: str = os.getenv("AGNES_VIDEO_25_MODEL", "agnes-video-2.5")
-    video_experimental_enabled: bool = os.getenv(
-        "AGNES_VIDEO_EXPERIMENTAL", "false"
-    ).strip().lower() in {"1", "true", "yes", "on"}
-    video_trial_enabled: bool = os.getenv(
-        "AGNES_VIDEO_25_ENABLED", "false"
-    ).strip().lower() in {"1", "true", "yes", "on"}
+    image: str = os.getenv("AGNES_IMAGE_MODEL", "agnes-image-2.5-flash")
+    video: str = os.getenv("AGNES_VIDEO_MODEL", "agnes-video-2.5-flash")
+    video_stable: str = os.getenv("AGNES_VIDEO_STABLE_MODEL", "agnes-video-v2.0")
 
 
 @dataclass(frozen=True)
@@ -69,8 +60,8 @@ class AgnesCapabilityConfig:
     supports_edit: bool = False
     supports_image_to_video: bool = True
     supports_text_to_video: bool = True
-    max_clip_duration_sec: float = 18
-    min_clip_duration_sec: float = 1
+    max_clip_duration_sec: float = 12
+    min_clip_duration_sec: float = 4
 
 
 @dataclass(frozen=True)
@@ -79,6 +70,15 @@ class Settings:
     agnes_api_keys: list[str] = field(default_factory=lambda: _split_keys(os.getenv("AGNES_API_KEYS")))
     agnes_base_url: str = _normalize_agnes_base_url(os.getenv("AGNES_BASE_URL"))
     agnes_request_timeout_sec: float = float(os.getenv("AGNES_REQUEST_TIMEOUT_SEC", "120"))
+
+    # Production retry policy. Retries are deliberately short and bounded:
+    # transient failures must not leave a job hanging for tens of minutes.
+    agnes_retry_max_attempts: int = int(os.getenv("AGNES_RETRY_MAX_ATTEMPTS", "4"))
+    agnes_retry_initial_delay_sec: float = float(os.getenv("AGNES_RETRY_INITIAL_DELAY_SEC", "2"))
+    agnes_retry_max_delay_sec: float = float(os.getenv("AGNES_RETRY_MAX_DELAY_SEC", "20"))
+    agnes_retry_jitter_sec: float = float(os.getenv("AGNES_RETRY_JITTER_SEC", "0.5"))
+    agnes_retry_429_max_delay_sec: float = float(os.getenv("AGNES_RETRY_429_MAX_DELAY_SEC", "30"))
+
     agnes_alternate_base_url: str = _normalize_agnes_base_url(
         os.getenv("AGNES_ALTERNATE_BASE_URL")
     ) if os.getenv("AGNES_ALTERNATE_BASE_URL") else ""
@@ -112,6 +112,16 @@ class Settings:
             raise RuntimeError("AGNES_BASE_URL phải dùng HTTPS.")
         if self.agnes_request_timeout_sec <= 0:
             raise RuntimeError("AGNES_REQUEST_TIMEOUT_SEC phải lớn hơn 0.")
+        if self.agnes_retry_max_attempts < 1:
+            raise RuntimeError("AGNES_RETRY_MAX_ATTEMPTS phải >= 1.")
+        if self.agnes_retry_initial_delay_sec < 0:
+            raise RuntimeError("AGNES_RETRY_INITIAL_DELAY_SEC phải >= 0.")
+        if self.agnes_retry_max_delay_sec < self.agnes_retry_initial_delay_sec:
+            raise RuntimeError("AGNES_RETRY_MAX_DELAY_SEC phải >= AGNES_RETRY_INITIAL_DELAY_SEC.")
+        if self.agnes_retry_jitter_sec < 0:
+            raise RuntimeError("AGNES_RETRY_JITTER_SEC phải >= 0.")
+        if self.agnes_retry_429_max_delay_sec < 0:
+            raise RuntimeError("AGNES_RETRY_429_MAX_DELAY_SEC phải >= 0.")
         if self.agnes_alternate_base_url and not self.agnes_alternate_base_url.startswith("https://"):
             raise RuntimeError("AGNES_ALTERNATE_BASE_URL phải dùng HTTPS.")
         for name, value in vars(self.agnes_models).items():
